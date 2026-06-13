@@ -522,7 +522,6 @@ function appendBlock(block, offset) {
   block.split('').forEach((ch, i) => {
     const rank = offset + i + 1;
     displayBuffer.push({rank, ch});
-    allDigits += ch;
     totalClientDigits++;
   });
   if (displayBuffer.length > MAX_DISPLAY) {
@@ -609,13 +608,16 @@ function connectContinuous() {
   });
 
   es.addEventListener('digits', e => {
-    const { block, offset, total, milestone } = JSON.parse(e.data);
-    appendBlock(block, offset);   // allDigits est déjà incrémenté à l'intérieur
+    const { block, offset, total, milestone, milestoneStart } = JSON.parse(e.data);
+    appendBlock(block, offset);
     $('btnSave').disabled = false;
 
-    const pct = Math.min(100, Math.round((offset + block.length) / total * 100));
+    const msStart = milestoneStart || 0;
+    const msProgress = Math.max(0, offset + block.length - msStart);
+    const msTarget = milestone - msStart;
+    const pct = msTarget > 0 ? Math.min(100, Math.round(msProgress / msTarget * 100)) : 100;
     $('progressFill').style.width = pct + '%';
-    $('progDigits').textContent = fmt(offset + block.length) + ' / ' + fmt(total) + '  (milestone ' + fmt(milestone) + ')';
+    $('progDigits').textContent = fmt(offset + block.length) + ' / ' + fmt(milestone) + '  (milestone ' + fmt(milestone) + ')';
     $('progPct').textContent = pct + ' %';
   });
 
@@ -629,7 +631,11 @@ function connectContinuous() {
   });
 
   es.addEventListener('status', e => {
-    const { milestone } = JSON.parse(e.data);
+    const { milestone, current_decimals } = JSON.parse(e.data);
+    $('progressFill').style.width = '0%';
+    $('progressFill').classList.remove('indeterminate');
+    $('progDigits').textContent = `Calcul du milestone ${fmt(milestone)} en cours…  (${fmt(current_decimals)} décimales déjà atteintes)`;
+    $('progPct').textContent = '—';
     toast(`Calcul du milestone ${fmt(milestone)}…`, 'info');
   });
 
@@ -674,13 +680,13 @@ $('btnReset').addEventListener('click', hardReset);
 
 $('btnSave').addEventListener('click', async () => {
   try {
-    const r = await fetch('/save', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ digits: allDigits })
-    });
-    if (r.ok) { toast('Sauvegardé dans pi_digits.txt', 'ok'); updateStorage(); }
-    else toast('Échec de la sauvegarde.', 'error');
-  } catch { toast('Erreur réseau.', 'error'); }
+    const a = document.createElement('a');
+    a.href = '/complet';
+    a.download = 'pi_complet.txt';
+    a.click();
+    toast('Téléchargement de pi_complet.txt lancé', 'ok');
+    updateStorage();
+  } catch { toast('Erreur de téléchargement.', 'error'); }
 });
 
 $('btnDl').addEventListener('click', async () => {
@@ -702,25 +708,34 @@ $('btnDlComplet').addEventListener('click', async () => {
 });
 
 /* ── Rank search ── */
-$('rankSearch').addEventListener('input', e => {
+let searchAbort = null;
+$('rankSearch').addEventListener('input', async (e) => {
   const rank = parseInt(e.target.value, 10);
   if (!rank || rank < 1) {
     $('rankOut').textContent = 'Entrez un rang pour afficher la décimale correspondante.';
     return;
   }
-  const digit = allDigits[rank + 1];
-  if (digit !== undefined) {
-    $('rankOut').innerHTML = `Décimale <strong>n°${fmt(rank)}</strong> = <span class="bigDigit v${digit}">${digit}</span>`;
-    const target = document.querySelector(`.pi-digit[data-rank="${rank}"]`);
-    if (target) {
-      target.scrollIntoView({ behavior:'smooth', block:'center' });
-      target.parentElement.classList.add('search-glow');
-      setTimeout(() => target.parentElement.classList.remove('search-glow'), 2200);
+  if (searchAbort) searchAbort.abort();
+  searchAbort = new AbortController();
+  try {
+    const r = await fetch(`/digit?rank=${rank}`, { signal: searchAbort.signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const { digit, available } = await r.json();
+    if (digit !== null) {
+      $('rankOut').innerHTML = `Décimale <strong>n°${fmt(rank)}</strong> = <span class="bigDigit v${digit}">${digit}</span>`;
+      const target = document.querySelector(`.pi-digit[data-rank="${rank}"]`);
+      if (target) {
+        target.scrollIntoView({ behavior:'smooth', block:'center' });
+        target.parentElement.classList.add('search-glow');
+        setTimeout(() => target.parentElement.classList.remove('search-glow'), 2200);
+      }
+    } else {
+      $('rankOut').textContent = `Décimale n°${fmt(rank)} non encore calculée (${fmt(available)} disponibles).`;
     }
-  } else {
-    $('rankOut').textContent = rank > count
-      ? `Décimale n°${fmt(rank)} non encore calculée.`
-      : 'Rang invalide.';
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      $('rankOut').textContent = 'Erreur de recherche.';
+    }
   }
 });
 

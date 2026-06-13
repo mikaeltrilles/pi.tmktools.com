@@ -192,7 +192,7 @@ function broadcast(event, payload) {
 }
 
 /* ── Stream décimales aux clients ── */
-function streamDecimalsToClients(decimals, offsetStart, total, milestone, isLive = true) {
+function streamDecimalsToClients(decimals, offsetStart, total, milestone, isLive = true, milestoneStart = offsetStart) {
   const chunkSize = isLive ? BLOCK_SIZE : CATCHUP_BLOCK;
   const delay = isLive ? BLOCK_DELAY_MS : 20;
 
@@ -203,7 +203,7 @@ function streamDecimalsToClients(decimals, offsetStart, total, milestone, isLive
     if (!continuousState.running && isLive) return;
     const block = decimals.slice(idx, idx + chunkSize);
     if (!block) return;
-    broadcast('digits', { block, offset, total, milestone });
+    broadcast('digits', { block, offset, total, milestone, milestoneStart });
     idx += block.length;
     offset += block.length;
     if (idx < decimals.length) {
@@ -241,7 +241,7 @@ async function runNextMilestone() {
     const total = digits.length - 2;
 
     // Streamer les nouvelles décimales aux clients
-    streamDecimalsToClients(newDec, prevLen, total, target, true);
+    streamDecimalsToClients(newDec, prevLen, total, target, true, prevLen);
 
     // Sauvegardes fichiers
     await writeSnapshot(digits, target);
@@ -389,7 +389,7 @@ app.get('/stream-continuous', (req, res) => {
       ? MILESTONES[continuousState.milestoneIdx]
       : 0;
     const offsetStart = existing.length - tail.length;
-    streamDecimalsToClients(tail, offsetStart, existing.length, milestone, false);
+    streamDecimalsToClients(tail, offsetStart, existing.length, milestone, false, offsetStart);
   }
 
   req.on('close', () => {
@@ -438,6 +438,18 @@ app.get('/complet', async (req, res) => {
     if (e.code === 'ENOENT') return res.status(404).send('# Aucun fichier complet.\n');
     res.status(500).send('Erreur.');
   }
+});
+
+/* Recherche d'une décimale par rang (1-based) */
+app.get('/digit', (req, res) => {
+  const rank = parseInt(req.query.rank, 10);
+  if (!rank || rank < 1) return res.status(400).json({ error: 'Rang invalide' });
+  const idx = rank + 1; // skip "3."
+  const digits = continuousState.digits;
+  if (idx >= digits.length) {
+    return res.json({ rank, digit: null, available: digits.length - 2 });
+  }
+  res.json({ rank, digit: digits[idx], available: digits.length - 2 });
 });
 
 /* ── Démarrage + auto-start continu ── */
