@@ -566,12 +566,14 @@ function connectContinuous() {
     const { block, offset } = JSON.parse(e.data);
     appendBlock(block, offset);
     $('btnSave').disabled = false;
-    updateLiveCounter(totalClientDigits);
 
-    const goal = visualGoal(totalClientDigits);
-    const pct = goal > 0 ? Math.min(100, Math.round(totalClientDigits / goal * 100)) : 100;
+    const currentTotal = offset + block.length; // position absolue serveur
+    updateLiveCounter(currentTotal);
+
+    const goal = visualGoal(currentTotal);
+    const pct = goal > 0 ? Math.min(100, Math.round(currentTotal / goal * 100)) : 100;
     $('progressFill').style.width = pct + '%';
-    $('progDigits').textContent = fmt(totalClientDigits) + ' / ' + fmt(goal);
+    $('progDigits').textContent = fmt(currentTotal) + ' / ' + fmt(goal);
     $('progPct').textContent = pct + ' %';
   });
 
