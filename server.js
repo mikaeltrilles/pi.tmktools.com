@@ -417,6 +417,27 @@ app.get('/digit', (req, res) => {
   res.json({ rank, digit: digits[idx], available: digits.length - 2 });
 });
 
+/* Retourne un bloc de ~500 décimales centré sur le rang demandé */
+app.get('/digits-around', (req, res) => {
+  const rank = parseInt(req.query.rank, 10);
+  if (!rank || rank < 1) return res.status(400).json({ error: 'Rang invalide' });
+
+  const digits = continuousState.digits;
+  const total = digits.length - 2;
+  if (rank > total) {
+    return res.json({ rank, block: null, offset: null, total, message: 'Rang non encore calculé' });
+  }
+
+  const RADIUS = 500;
+  let start = Math.max(0, rank - RADIUS);
+  let end = Math.min(total, rank + RADIUS);
+  // Aligner start sur multiple de 10 pour que les row-labels soient cohérents
+  start = Math.floor(start / 10) * 10;
+
+  const block = digits.slice(2 + start, 2 + end);
+  res.json({ rank, block, offset: start, total });
+});
+
 /* Recherche d'une chaîne de chiffres dans les snapshots et la mémoire */
 app.get('/search-chain', async (req, res) => {
   const q = (req.query.q || '').trim();
