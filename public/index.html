@@ -473,10 +473,37 @@ function getOrCreateRow() {
   return currentRow;
 }
 
+let distRafPending = false;
+function scheduleRenderDist() {
+  if (distRafPending) return;
+  distRafPending = true;
+  requestAnimationFrame(() => {
+    renderDist();
+    distRafPending = false;
+  });
+}
+
 function appendBlock(block, offset) {
+  // Construction batched via DocumentFragment pour éviter les reflows intermédiaires
+  const frag = document.createDocumentFragment();
   block.split('').forEach((ch, i) => {
     const rank = offset + i + 1;
-    const row = getOrCreateRow();
+    if (!currentRow || rowCellCount >= 10) {
+      if (currentRowStartRank > 1 && (currentRowStartRank - 1) % 100 === 0) {
+        const sep = document.createElement('div');
+        sep.className = 'century-rule';
+        sep.innerHTML = '<div class="line"></div><div class="text">'+(currentRowStartRank-1)+'</div><div class="line"></div>';
+        frag.appendChild(sep);
+      }
+      currentRow = document.createElement('div');
+      currentRow.className = 'pi-row';
+      const label = document.createElement('span');
+      label.className = 'row-label';
+      label.textContent = currentRowStartRank;
+      currentRow.appendChild(label);
+      frag.appendChild(currentRow);
+      rowCellCount = 0;
+    }
     const cell = document.createElement('span');
     cell.className = 'pi-cell';
     const digit = document.createElement('span');
@@ -489,13 +516,14 @@ function appendBlock(block, offset) {
     rk.textContent = rank;
     cell.appendChild(digit);
     cell.appendChild(rk);
-    row.appendChild(cell);
+    currentRow.appendChild(cell);
     dist[parseInt(ch)]++;
     count++;
     rowCellCount++;
     if (rowCellCount >= 10) currentRowStartRank = rank + 1;
   });
-  renderDist();
+  $('piStage').appendChild(frag);
+  scheduleRenderDist();
 }
 
 /* ── Reset / Resync ── */
