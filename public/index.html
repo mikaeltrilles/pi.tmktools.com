@@ -304,6 +304,7 @@ input#customN:focus { border-color:var(--cyan); }
   <div class="live-counter" id="liveCounterWrap" style="display:none;">
     <div class="n" id="liveCounter">0</div>
     <div class="label">Décimales calculées</div>
+    <div class="label" id="liveCounterWords" style="font-style:italic;color:var(--text-dim);margin-top:0.15rem;"></div>
   </div>
 </header>
 
@@ -499,6 +500,7 @@ function hardReset() {
   $('progDigits').textContent = '0 / 0';
   $('progPct').textContent = '0 %';
   $('liveCounter').textContent = '0';
+  $('liveCounterWords').textContent = '';
   $('liveCounterWrap').style.display = 'none';
   $('btnSave').disabled = true;
   setStatus('idle');
@@ -536,8 +538,52 @@ window.downloadSnapshot = async function(n) {
 let reconnectDelay = 1000;
 let serverTotalDigits = 0;
 
+function nombreEnLettres(n) {
+  if (n === 0) return 'zéro';
+  const unit = ['','un','deux','trois','quatre','cinq','six','sept','huit','neuf'];
+  const dizaine = ['','dix','vingt','trente','quarante','cinquante','soixante','soixante','quatre-vingt','quatre-vingt'];
+  const teens = ['dix','onze','douze','treize','quatorze','quinze','seize','dix-sept','dix-huit','dix-neuf'];
+
+  function conv(m) {
+    if (m < 10) return unit[m];
+    if (m < 20) return teens[m - 10];
+    if (m < 70) {
+      const d = Math.floor(m / 10), u = m % 10;
+      return u === 1 ? dizaine[d] + '-et-un' : dizaine[d] + (u > 0 ? '-' + unit[u] : '');
+    }
+    if (m < 80) {
+      const r = m - 60;
+      return r === 1 ? 'soixante-et-onze' : 'soixante-' + conv(r);
+    }
+    if (m < 100) {
+      const r = m - 80;
+      return r === 1 ? 'quatre-vingt-un' : 'quatre-vingt' + (r > 0 ? '-' + conv(r) : '');
+    }
+    if (m < 1000) {
+      const c = Math.floor(m / 100), r = m % 100;
+      const centStr = c > 1 ? unit[c] + ' cent' : 'cent';
+      return r > 0 ? centStr + ' ' + conv(r) : centStr + 's';
+    }
+    if (m < 1000000) {
+      const mil = Math.floor(m / 1000), r = m % 1000;
+      const milStr = mil > 1 ? conv(mil) + ' mille' : 'mille';
+      return r > 0 ? milStr + ' ' + conv(r) : milStr;
+    }
+    if (m < 1000000000) {
+      const mil = Math.floor(m / 1000000), r = m % 1000000;
+      const milStr = mil > 1 ? conv(mil) + ' millions' : 'un million';
+      return r > 0 ? milStr + ' ' + conv(r) : milStr;
+    }
+    const mil = Math.floor(m / 1000000000), r = m % 1000000000;
+    const milStr = mil > 1 ? conv(mil) + ' milliards' : 'un milliard';
+    return r > 0 ? milStr + ' ' + conv(r) : milStr;
+  }
+  return conv(n);
+}
+
 function updateLiveCounter(n) {
   $('liveCounter').textContent = fmt(n);
+  $('liveCounterWords').textContent = nombreEnLettres(n);
   $('liveCounterWrap').style.display = 'block';
 }
 
