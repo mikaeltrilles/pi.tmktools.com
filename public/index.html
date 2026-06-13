@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>π Explorer — Calcul en temps réel</title>
+<meta name="description" content="Explorateur professionnel des décimales de Pi.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&family=JetBrains+Mono:wght@400;700&family=Inter:wght@300..600&display=swap" rel="stylesheet">
+
+<style>
+/* ════════════════════════════════════════════════════════════════════════════
+   π EXPLORER — DESIGN SYSTEM COSMOS
+   ════════════════════════════════════════════════════════════════════════════ */
+:root {
+  --bg-deep:       #05080c;
+  --bg-panel:      #0a0f16;
+  --bg-cell:       #0d1420;
+  --bg-cell-alt:   #0f1724;
+  --border-subtle: rgba(255,255,255,0.06);
+  --border-glow:   rgba(0,217,245,0.18);
+  --text-main:     #e8ecf1;
+  --text-dim:      #6b7280;
+  --text-faint:    #374151;
+  --cyan:          #22d3ee;
+  --cyan-dim:      #0891b2;
+  --magenta:       #c084fc;
+  --amber:         #fbbf24;
+  --green:         #4ade80;
+  --red:           #f87171;
+  --pi-glow:       rgba(34,211,238,0.35);
+
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-mono:    'JetBrains Mono', 'Fira Code', monospace;
+  --font-body:    'Inter', sans-serif;
+}
+
+*,*::before,*::after { box-sizing: border-box; margin:0; }
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-deep);
+  color: var(--text-main);
+  min-height: 100vh;
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+body::before {
+  content:''; position: fixed; inset:0; pointer-events:none; z-index:0;
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 40%, rgba(34,211,238,0.04) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 80% 60%, rgba(192,132,252,0.03) 0%, transparent 55%);
+}
+
+.app { position:relative; z-index:1; max-width:1200px; margin:0 auto; padding:2rem 1.25rem; }
+@media(min-width:1280px){ .app{ max-width:1400px; } }
+
+/* ── Header ── */
+.header {
+  display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;
+  padding-bottom:1.5rem; margin-bottom:1.5rem;
+  border-bottom:1px solid var(--border-subtle);
+}
+.brand { display:flex; align-items:center; gap:0.875rem; }
+.brand svg { width:44px; height:44px; filter:drop-shadow(0 0 8px var(--pi-glow)); }
+.brand h1 { font-family:var(--font-display); font-size:clamp(1.6rem, 4vw, 2.4rem); font-weight:700; letter-spacing:-0.03em; }
+.brand h1 span { color:var(--cyan); text-shadow:0 0 20px var(--pi-glow); }
+.brand .tagline { font-size:0.75rem; color:var(--text-dim); margin-top:0.125rem; letter-spacing:0.05em; }
+
+.status-bar { display:flex; align-items:center; gap:1rem; flex-wrap:wrap; }
+.badge {
+  font-family:var(--font-mono); font-size:0.7rem; padding:0.35rem 0.75rem;
+  border-radius:999px; background:var(--bg-panel); border:1px solid var(--border-subtle);
+  display:inline-flex; align-items:center; gap:0.5rem; transition:.2s;
+}
+.badge .dot { width:7px; height:7px; border-radius:50%; background:var(--text-faint); }
+.badge.on .dot  { background:var(--red); box-shadow:0 0 8px var(--red); animation:breathe 1.4s infinite; }
+.badge.ok .dot  { background:var(--green); box-shadow:0 0 6px var(--green); }
+.badge.warn .dot{ background:var(--amber); }
+@keyframes breathe { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.35;transform:scale(.65)} }
+
+.chrono {
+  font-family:var(--font-mono); font-size:0.85rem; color:var(--cyan);
+  background:rgba(34,211,238,0.08); padding:0.35rem 0.7rem; border-radius:0.375rem;
+  border:1px solid rgba(34,211,238,0.15); min-width:6.5ch; text-align:center;
+}
+
+/* ── Toolbar ── */
+.toolbar {
+  display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center;
+  margin-bottom:1.5rem;
+}
+.toolbar-group { display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; }
+.preset-group { display:flex; gap:0.375rem; }
+.preset {
+  font-family:var(--font-mono); font-size:0.78rem; padding:0.45rem 0.8rem;
+  border-radius:0.4rem; border:1px solid var(--border-subtle); background:var(--bg-panel);
+  color:var(--text-dim); cursor:pointer; transition:.15s;
+}
+.preset:hover, .preset.active { border-color:var(--cyan); color:var(--cyan); background:rgba(34,211,238,0.08); }
+
+input#customN {
+  width:7.5rem; font-family:var(--font-mono); font-size:0.78rem;
+  padding:0.45rem 0.7rem; border-radius:0.4rem; border:1px solid var(--border-subtle);
+  background:var(--bg-panel); color:var(--text-main); outline:none;
+}
+input#customN:focus { border-color:var(--cyan); }
+
+.btn {
+  font-family:var(--font-display); font-size:0.8rem; font-weight:600;
+  padding:0.5rem 1rem; border-radius:0.45rem; border:1px solid transparent;
+  cursor:pointer; display:inline-flex; align-items:center; gap:0.4rem; transition:.15s;
+}
+.btn:disabled { opacity:.4; cursor:not-allowed; }
+.btn-go        { background:var(--cyan); color:#000; }
+.btn-go:hover:not(:disabled)   { background:#67e8f9; box-shadow:0 0 18px var(--pi-glow); }
+.btn-continuous{ background:linear-gradient(135deg, var(--magenta), #8b5cf6); color:#fff; }
+.btn-continuous:hover:not(:disabled){ box-shadow:0 0 18px rgba(192,132,252,0.4); }
+.btn-stop      { background:var(--red); color:#fff; }
+.btn-save      { background:var(--bg-panel); color:var(--text-main); border-color:var(--border-subtle); }
+.btn-save:hover:not(:disabled){ border-color:var(--green); color:var(--green); background:rgba(74,222,128,0.06); }
+.btn-reset     { background:transparent; color:var(--text-dim); border-color:var(--border-subtle); }
+.btn-reset:hover { color:var(--text-main); border-color:var(--text-dim); }
+.btn-dl        { background:transparent; color:var(--text-dim); border-color:var(--border-subtle); font-size:0.75rem; padding:0.4rem 0.7rem; }
+.btn-dl:hover  { color:var(--cyan); border-color:var(--cyan); }
+
+.mode-badge {
+  font-family:var(--font-mono); font-size:0.65rem; padding:0.2rem 0.5rem;
+  border-radius:0.25rem; background:rgba(34,211,238,0.08); color:var(--cyan);
+  border:1px solid rgba(34,211,238,0.15);
+}
+
+/* ── Milestone tracker ── */
+.milestone-track {
+  display:flex; flex-wrap:wrap; gap:0.4rem; margin-bottom:1rem;
+}
+.milestone-chip {
+  font-family:var(--font-mono); font-size:0.62rem; padding:0.25rem 0.5rem;
+  border-radius:0.3rem; background:var(--bg-panel); border:1px solid var(--border-subtle);
+  color:var(--text-faint); transition:.2s;
+}
+.milestone-chip.reached { color:var(--cyan); border-color:rgba(34,211,238,0.25); background:rgba(34,211,238,0.06); }
+.milestone-chip.current { color:var(--amber); border-color:var(--amber); background:rgba(251,191,36,0.08); animation:pulseAmber 2s infinite; }
+@keyframes pulseAmber { 0%,100%{box-shadow:0 0 0 rgba(251,191,36,0)} 50%{box-shadow:0 0 8px rgba(251,191,36,0.2)} }
+
+/* ── Progress ── */
+.progress-area { margin-bottom:1.25rem; }
+.progress-track { height:3px; background:var(--bg-panel); border-radius:2px; overflow:hidden; }
+.progress-fill { height:100%; width:0%; background:linear-gradient(90deg, var(--magenta), var(--cyan)); transition:width .25s ease; box-shadow:0 0 14px var(--cyan-dim); }
+.progress-meta { display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:0.65rem; color:var(--text-dim); margin-top:0.4rem; letter-spacing:0.04em; }
+
+/* ── Grille de décimales ── */
+.pi-stage {
+  background:var(--bg-panel); border:1px solid var(--border-subtle); border-radius:0.6rem;
+  padding:1.25rem; overflow-x:auto; min-height:160px;
+}
+.pi-stage:empty::before {
+  content:"Choisissez un mode de calcul ci-dessus."; color:var(--text-faint);
+  font-size:0.8rem; display:block; text-align:center; padding-top:3rem;
+}
+
+.pi-row { display:flex; align-items:flex-end; gap:0.25rem; margin-bottom:0.35rem; }
+.row-label {
+  font-family:var(--font-mono); font-size:0.6rem; color:var(--text-faint);
+  width:2.2rem; text-align:right; padding-right:0.5rem; flex-shrink:0;
+  user-select:none; position:relative; top:-2px;
+}
+.row-label::before { content:"#"; opacity:.5; }
+
+.pi-cell { display:flex; flex-direction:column; align-items:center; width:1.5rem; flex-shrink:0; }
+.pi-digit {
+  font-family:var(--font-mono); font-size:0.95rem; font-weight:700;
+  line-height:1.2; display:block; text-align:center;
+  animation: popIn .1s ease both;
+}
+@keyframes popIn { from { opacity:0; transform:translateY(6px) scale(.8); } to { opacity:1; transform:translateY(0) scale(1); } }
+
+.pi-digit.v0 { color:#60a5fa; text-shadow:0 0 6px rgba(96,165,250,0.3); }
+.pi-digit.v1 { color:#34d399; text-shadow:0 0 6px rgba(52,211,153,0.3); }
+.pi-digit.v2 { color:#a78bfa; text-shadow:0 0 6px rgba(167,139,250,0.3); }
+.pi-digit.v3 { color:#f472b6; text-shadow:0 0 6px rgba(244,114,182,0.3); }
+.pi-digit.v4 { color:#fb923c; text-shadow:0 0 6px rgba(251,146,60,0.3); }
+.pi-digit.v5 { color:#facc15; text-shadow:0 0 6px rgba(250,204,21,0.3); }
+.pi-digit.v6 { color:#4ade80; text-shadow:0 0 6px rgba(74,222,128,0.3); }
+.pi-digit.v7 { color:#38bdf8; text-shadow:0 0 6px rgba(56,189,248,0.3); }
+.pi-digit.v8 { color:#e879f9; text-shadow:0 0 6px rgba(232,121,249,0.3); }
+.pi-digit.v9 { color:#f87171; text-shadow:0 0 6px rgba(248,113,113,0.3); }
+
+.pi-rank {
+  font-family:var(--font-mono); font-size:0.5rem; color:var(--text-faint);
+  line-height:1; margin-top:0.15rem; letter-spacing:0.02em; transition:color .2s;
+}
+.pi-cell:hover .pi-rank { color:var(--cyan); }
+.pi-cell:hover .pi-digit { transform:scale(1.35); z-index:5; }
+
+.century-rule { display:flex; align-items:center; gap:0.75rem; margin:0.6rem 0; opacity:.7; }
+.century-rule .line { flex:1; height:1px; background:linear-gradient(90deg, transparent, var(--cyan-dim), transparent); }
+.century-rule .text {
+  font-family:var(--font-mono); font-size:0.6rem; color:var(--cyan-dim);
+  border:1px solid rgba(34,211,238,0.2); padding:0.15rem 0.5rem; border-radius:999px;
+}
+
+/* ── Sidebar / Panneau inférieur ── */
+.side { margin-top:1.5rem; display:grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap:1rem; }
+@media(min-width:1024px){
+  .layout { display:grid; grid-template-columns: 1fr 300px; gap:1.5rem; }
+  .side { margin-top:0; display:flex; flex-direction:column; gap:1rem; }
+}
+
+.panel {
+  background:var(--bg-panel); border:1px solid var(--border-subtle); border-radius:0.55rem;
+  padding:1rem 1.1rem;
+}
+.panel h3 {
+  font-family:var(--font-display); font-size:0.78rem; font-weight:600;
+  color:var(--text-main); margin-bottom:0.75rem; display:flex; align-items:center; gap:0.4rem;
+}
+.panel h3 .icon { font-size:1rem; }
+
+/* Distribution */
+.dist-row { display:grid; grid-template-columns: 1.1rem 1fr auto; gap:0.4rem; align-items:center; margin-bottom:0.35rem; }
+.dist-label { font-family:var(--font-mono); font-size:0.6rem; color:var(--text-dim); text-align:center; }
+.dist-track { height:4px; background:rgba(255,255,255,0.04); border-radius:2px; overflow:hidden; }
+.dist-fill  { height:100%; border-radius:2px; transition:width .3s ease; }
+.dist-count { font-family:var(--font-mono); font-size:0.6rem; color:var(--text-dim); min-width:2.5ch; text-align:right; }
+
+/* Storage */
+.storage-info { font-size:0.75rem; color:var(--text-dim); line-height:1.7; }
+.storage-info .val { color:var(--text-main); font-weight:600; font-family:var(--font-mono); }
+
+/* Snapshots list */
+.snapshot-list { display:flex; flex-direction:column; gap:0.35rem; max-height:220px; overflow-y:auto; }
+.snapshot-row {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:0.35rem 0.5rem; border-radius:0.35rem; background:var(--bg-cell);
+  font-family:var(--font-mono); font-size:0.72rem;
+}
+.snapshot-row .n { color:var(--cyan); font-weight:700; }
+.snapshot-row .dl { color:var(--text-faint); cursor:pointer; transition:.15s; }
+.snapshot-row .dl:hover { color:var(--cyan); }
+
+/* Rank search */
+.rank-input {
+  width:100%; font-family:var(--font-mono); font-size:0.8rem;
+  padding:0.4rem 0.6rem; border-radius:0.35rem; border:1px solid var(--border-subtle);
+  background:var(--bg-cell); color:var(--text-main); outline:none; margin-bottom:0.5rem;
+}
+.rank-input:focus { border-color:var(--cyan); }
+.rank-out { font-size:0.78rem; color:var(--text-dim); min-height:2rem; }
+.rank-out strong { color:var(--text-main); }
+.rank-out .bigDigit { display:inline-block; font-family:var(--font-mono); font-size:1.4rem; font-weight:700; color:var(--cyan); margin-left:0.3rem; vertical-align:middle; text-shadow:0 0 12px var(--pi-glow); }
+
+/* ── Toast ── */
+.toast {
+  position:fixed; bottom:1.5rem; right:1.5rem; padding:0.6rem 1.1rem;
+  border-radius:0.45rem; font-size:0.8rem; font-weight:500;
+  background:var(--bg-panel); border:1px solid var(--border-subtle);
+  transform:translateY(12px); opacity:0; transition:all .25s ease; z-index:999; pointer-events:none;
+}
+.toast.on { transform:translateY(0); opacity:1; }
+.toast-ok { border-color:var(--green); color:var(--green); background:rgba(74,222,128,0.08); }
+.toast-bad{ border-color:var(--red);  color:var(--red);  background:rgba(248,113,113,0.08); }
+.toast-info{ border-color:var(--cyan); color:var(--cyan); background:rgba(34,211,238,0.08); }
+
+/* ── Footer ── */
+.footer {
+  text-align:center; padding:2.5rem 0 1rem; margin-top:2rem;
+  border-top:1px solid var(--border-subtle); font-size:0.68rem; color:var(--text-faint); letter-spacing:0.04em;
+}
+
+::-webkit-scrollbar { width:6px; height:6px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.08); border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,0.14); }
+
+.search-glow { animation: searchPulse 1.8s ease infinite; }
+@keyframes searchPulse { 0%,100%{background:rgba(34,211,238,0.15);box-shadow:0 0 0 2px rgba(34,211,238,0.2)} 50%{background:rgba(34,211,238,0.35);box-shadow:0 0 0 3px rgba(34,211,238,0.4)} }
+</style>
+</head>
+
+<body>
+<div class="app">
+
+<!-- ═════════════════════ HEADER ═════════════════════ -->
+<header class="header">
+  <div class="brand">
+    <svg viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="22" cy="22" r="20" stroke="rgba(34,211,238,0.12)" stroke-width="1"/>
+      <line x1="8" y1="14" x2="36" y2="14" stroke="var(--cyan)" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M16 14 Q15 28 13 34" stroke="var(--cyan)" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+      <path d="M28 14 Q29 26 26 34" stroke="var(--cyan)" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+      <circle cx="34" cy="34" r="2.5" fill="var(--amber)"/>
+    </svg>
+    <div>
+      <h1>π <span>Explorer</span></h1>
+      <div class="tagline">CALCUL DE PRÉCISION ARBITRAIRE EN TEMPS RÉEL</div>
+    </div>
+  </div>
+
+  <div class="status-bar">
+    <div class="badge" id="statusBadge"><span class="dot"></span><span id="statusText">Prêt</span></div>
+    <div class="chrono" id="chrono">0.00 s</div>
+    <div class="chrono" id="speed" style="color:var(--magenta);border-color:rgba(192,132,252,0.2);background:rgba(192,132,252,0.06);">0 dec/s</div>
+    <div class="mode-badge" id="modeBadge" style="display:none;">Mode continu</div>
+  </div>
+</header>
+
+<!-- ═════════════════════ TOOLBAR ═════════════════════ -->
+<div class="toolbar">
+  <div class="toolbar-group">
+    <div class="preset-group">
+      <button class="preset active" data-n="100">100</button>
+      <button class="preset" data-n="500">500</button>
+      <button class="preset" data-n="1000">1 000</button>
+      <button class="preset" data-n="5000">5 000</button>
+      <button class="preset" data-n="10000">10 000</button>
+      <input type="number" id="customN" min="10" max="100000" placeholder="Custom…">
+    </div>
+    <button id="btnGo" class="btn btn-go">▶ Calculer</button>
+    <button id="btnContinuous" class="btn btn-continuous">♾ Mode continu</button>
+    <button id="btnStop" class="btn btn-stop" style="display:none;">⏹ Arrêter</button>
+    <button id="btnSave" class="btn btn-save" disabled>💾 Sauvegarder</button>
+    <button id="btnReset" class="btn btn-reset">↺ Reset</button>
+  </div>
+</div>
+
+<!-- Milestones tracker -->
+<div class="milestone-track" id="milestoneTrack" style="display:none;"></div>
+
+<!-- ═════════════════════ PROGRESS ═════════════════════ -->
+<div class="progress-area" id="progressWrap" style="display:none;">
+  <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+  <div class="progress-meta">
+    <span id="progDigits">0 / 0</span>
+    <span id="progPct">0 %</span>
+  </div>
+</div>
+
+<!-- ═════════════════════ LAYOUT GRILLE + SIDEBAR ═════════════════════ -->
+<div class="layout">
+  <main>
+    <section class="pi-stage" id="piStage" aria-live="polite"></section>
+  </main>
+
+  <aside class="side">
+    <!-- Recherche -->
+    <div class="panel">
+      <h3><span class="icon">🔍</span> Chercher une position</h3>
+      <input type="number" id="rankSearch" class="rank-input" min="1" placeholder="Ex : 42">
+      <div class="rank-out" id="rankOut">Entrez un rang pour afficher la décimale correspondante.</div>
+    </div>
+
+    <!-- Distribution -->
+    <div class="panel">
+      <h3><span class="icon">📊</span> Distribution 0–9</h3>
+      <div id="distBox"></div>
+    </div>
+
+    <!-- Snapshots -->
+    <div class="panel">
+      <h3><span class="icon">📁</span> Snapshots</h3>
+      <div class="snapshot-list" id="snapshotList"></div>
+    </div>
+
+    <!-- Stockage -->
+    <div class="panel">
+      <h3><span class="icon">💾</span> Fichier global</h3>
+      <div class="storage-info">
+        <span class="val" id="storedCount">—</span> décimales dans pi_complet.txt<br>
+        <span class="val" id="storedDate">—</span>
+      </div>
+      <div style="display:flex; gap:0.5rem; margin-top:0.6rem;">
+        <button id="btnDl" class="btn btn-dl" style="flex:1;">⬇ pi_digits.txt</button>
+        <button id="btnDlComplet" class="btn btn-dl" style="flex:1;">⬇ pi_complet.txt</button>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<footer class="footer">
+  π Explorer — Algorithme : Machin (BigInt natif) · Node.js · Express · SSE · pi.tmktools.com
+</footer>
+
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════════════
+   FRONTEND LOGIC — Dual mode : Standard + Continu
+   ════════════════════════════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+
+let es = null;
+let allDigits = '3.';
+let count = 0;
+let target = 0;
+let start = 0;
+let timerInt = null;
+let dist = new Array(10).fill(0);
+let currentRow = null;
+let currentRowStartRank = 1;
+let rowCellCount = 0;
+let mode = 'standard'; // 'standard' | 'continuous'
+let milestones = [];
+let currentMilestoneIdx = -1;
+let continuousRunning = false;
+
+/* ── Utilities ── */
+function setStatus(state) {
+  const b = $('statusBadge');
+  b.className = 'badge ' + ({ computing:'on', done:'ok', error:'warn', idle:'' }[state] || '');
+  $('statusText').textContent = { computing:'Calcul en cours…', done:'Terminé', error:'Erreur', idle:'Prêt' }[state] || 'Prêt';
+}
+function toast(msg, type='info') {
+  const t = document.createElement('div');
+  const cls = type==='ok'?'toast-ok':type==='error'?'toast-bad':'toast-info';
+  t.className = `toast ${cls}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('on'));
+  setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 250); }, 3000);
+}
+function fmt(n) { return n.toLocaleString('fr-FR'); }
+function fmtTime(ms) {
+  const s = ms/1000;
+  return s < 60 ? s.toFixed(2)+' s' : Math.floor(s/60)+' m '+Math.floor(s%60)+' s';
+}
+
+/* ── Timer ── */
+function startTimer() {
+  start = Date.now();
+  clearInterval(timerInt);
+  timerInt = setInterval(() => {
+    const elapsed = Date.now() - start;
+    $('chrono').textContent = fmtTime(elapsed);
+    const speed = elapsed > 0 ? (count / (elapsed/1000)).toFixed(0) : 0;
+    $('speed').textContent = speed + ' dec/s';
+  }, 80);
+}
+function stopTimer(finalMs) {
+  clearInterval(timerInt);
+  $('chrono').textContent = fmtTime(finalMs);
+  const speed = finalMs > 0 ? (count / (finalMs/1000)).toFixed(0) : 0;
+  $('speed').textContent = speed + ' dec/s';
+}
+
+/* ── Distribution ── */
+function renderDist() {
+  const max = Math.max(...dist, 1);
+  const colors = ['#60a5fa','#34d399','#a78bfa','#f472b6','#fb923c','#facc15','#4ade80','#38bdf8','#e879f9','#f87171'];
+  $('distBox').innerHTML = dist.map((c, d) => {
+    const pct = (c/max*100).toFixed(1);
+    return `
+      <div class="dist-row">
+        <span class="dist-label">${d}</span>
+        <div class="dist-track"><div class="dist-fill" style="width:${pct}%;background:${colors[d]}"></div></div>
+        <span class="dist-count">${fmt(c)}</span>
+      </div>`;
+  }).join('');
+}
+
+/* ── DOM helpers pour la grille structurée ── */
+function getOrCreateRow() {
+  if (!currentRow || rowCellCount >= 10) {
+    if (currentRowStartRank > 1 && (currentRowStartRank - 1) % 100 === 0) {
+      const sep = document.createElement('div');
+      sep.className = 'century-rule';
+      sep.innerHTML = '<div class="line"></div><div class="text">'+(currentRowStartRank-1)+'</div><div class="line"></div>';
+      $('piStage').appendChild(sep);
+    }
+    currentRow = document.createElement('div');
+    currentRow.className = 'pi-row';
+    const label = document.createElement('span');
+    label.className = 'row-label';
+    label.textContent = currentRowStartRank;
+    currentRow.appendChild(label);
+    $('piStage').appendChild(currentRow);
+    rowCellCount = 0;
+  }
+  return currentRow;
+}
+
+function appendBlock(block, offset) {
+  block.split('').forEach((ch, i) => {
+    const rank = offset + i + 1;
+    const row = getOrCreateRow();
+    const cell = document.createElement('span');
+    cell.className = 'pi-cell';
+    const digit = document.createElement('span');
+    digit.className = 'pi-digit v' + ch;
+    digit.textContent = ch;
+    digit.dataset.rank = rank;
+    digit.dataset.val = ch;
+    const rk = document.createElement('span');
+    rk.className = 'pi-rank';
+    rk.textContent = rank;
+    cell.appendChild(digit);
+    cell.appendChild(rk);
+    row.appendChild(cell);
+    dist[parseInt(ch)]++;
+    count++;
+    rowCellCount++;
+    if (rowCellCount >= 10) currentRowStartRank = rank + 1;
+  });
+  renderDist();
+}
+
+/* ── Reset ── */
+function reset() {
+  if (es) { es.close(); es = null; }
+  clearInterval(timerInt);
+  $('piStage').innerHTML = '';
+  count = 0; dist.fill(0); allDigits = '3.';
+  currentRow = null; currentRowStartRank = 1; rowCellCount = 0;
+  $('chrono').textContent = '0.00 s';
+  $('speed').textContent = '0 dec/s';
+  $('progressWrap').style.display = 'none';
+  $('progressFill').style.width = '0%';
+  $('progDigits').textContent = '0 / 0';
+  $('progPct').textContent = '0 %';
+  $('btnSave').disabled = true;
+  $('btnGo').disabled = false;
+  $('btnContinuous').style.display = 'inline-flex';
+  $('btnStop').style.display = 'none';
+  $('modeBadge').style.display = 'none';
+  $('milestoneTrack').style.display = 'none';
+  $('milestoneTrack').innerHTML = '';
+  setStatus('idle');
+  renderDist();
+  $('rankOut').textContent = 'Entrez un rang pour afficher la décimale correspondante.';
+}
+
+/* ── Milestone chips ── */
+function renderMilestones() {
+  if (!milestones.length) return;
+  $('milestoneTrack').style.display = 'flex';
+  $('milestoneTrack').innerHTML = milestones.map((m, i) => {
+    let cls = 'milestone-chip';
+    if (i < currentMilestoneIdx) cls += ' reached';
+    else if (i === currentMilestoneIdx) cls += ' current';
+    return `<div class="${cls}" data-idx="${i}">${fmt(m)}</div>`;
+  }).join('');
+}
+
+/* ── Snapshots ── */
+async function loadSnapshots() {
+  try {
+    const { snapshots } = await (await fetch('/snapshots')).json();
+    if (!snapshots.length) {
+      $('snapshotList').innerHTML = '<div style="color:var(--text-faint);font-size:.7rem;text-align:center;padding:.5rem;">Aucun snapshot.</div>';
+      return;
+    }
+    $('snapshotList').innerHTML = snapshots.map(s => `
+      <div class="snapshot-row">
+        <span class="n">π_${fmt(s.n)}</span>
+        <span class="dl" onclick="downloadSnapshot(${s.n})">⬇</span>
+      </div>`).join('');
+  } catch { $('snapshotList').innerHTML = ''; }
+}
+window.downloadSnapshot = async function(n) {
+  const a = document.createElement('a');
+  a.href = `/snapshot/${n}`;
+  a.download = `pi_${n}.txt`;
+  a.click();
+};
+
+/* ════════════════════════════════════════════════════════════════════════════
+   MODE STANDARD
+   ════════════════════════════════════════════════════════════════════════════ */
+function selectedN() {
+  const a = document.querySelector('.preset.active');
+  if (a) return parseInt(a.dataset.n, 10);
+  const v = parseInt($('customN').value, 10);
+  return (v >= 10 && v <= 100000) ? v : 1000;
+}
+
+function goStandard() {
+  reset();
+  mode = 'standard';
+  target = selectedN();
+  $('progressWrap').style.display = 'block';
+  $('btnGo').disabled = true;
+  $('btnContinuous').disabled = true;
+  setStatus('computing');
+  startTimer();
+
+  es = new EventSource(`/stream?n=${target}`);
+
+  es.addEventListener('digits', e => {
+    const { block, offset, total } = JSON.parse(e.data);
+    appendBlock(block, offset);
+    const pct = Math.min(100, Math.round((offset + block.length) / total * 100));
+    $('progressFill').style.width = pct + '%';
+    $('progDigits').textContent = fmt(offset + block.length) + ' / ' + fmt(total);
+    $('progPct').textContent = pct + ' %';
+  });
+
+  es.addEventListener('done', e => {
+    const { digits, elapsed_ms } = JSON.parse(e.data);
+    allDigits = digits;
+    stopTimer(elapsed_ms);
+    setStatus('done');
+    $('btnSave').disabled = false;
+    $('btnGo').disabled = false;
+    $('btnContinuous').disabled = false;
+    es.close(); es = null;
+    $('progressFill').style.width = '100%';
+    $('progPct').textContent = '100 %';
+    toast(`Terminé : ${fmt(count)} décimales en ${fmtTime(elapsed_ms)}`, 'ok');
+  });
+
+  es.addEventListener('error', () => {
+    setStatus('error');
+    $('btnGo').disabled = false;
+    $('btnContinuous').disabled = false;
+    stopTimer(Date.now() - start);
+    es.close(); es = null;
+    toast('Erreur de connexion.', 'error');
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   MODE CONTINU
+   ════════════════════════════════════════════════════════════════════════════ */
+async function goContinuous() {
+  reset();
+  mode = 'continuous';
+  $('btnContinuous').style.display = 'none';
+  $('btnStop').style.display = 'inline-flex';
+  $('btnGo').disabled = true;
+  $('modeBadge').style.display = 'inline-flex';
+  $('progressWrap').style.display = 'block';
+  setStatus('computing');
+  startTimer();
+
+  // Démarrer le calcul côté serveur
+  const startRes = await fetch('/start-continuous', { method:'POST' });
+  const startData = await startRes.json();
+  milestones = startData.milestones || [];
+  renderMilestones();
+
+  // Ouvrir le SSE continu
+  es = new EventSource('/stream-continuous');
+
+  es.addEventListener('state', e => {
+    const st = JSON.parse(e.data);
+    milestones = st.milestones || milestones;
+    currentMilestoneIdx = st.current_milestone_idx;
+    renderMilestones();
+  });
+
+  es.addEventListener('digits', e => {
+    const { block, offset, total, milestone } = JSON.parse(e.data);
+    appendBlock(block, offset);
+    // Progression relative au milestone courant
+    const pct = Math.min(100, Math.round((offset + block.length) / total * 100));
+    $('progressFill').style.width = pct + '%';
+    $('progDigits').textContent = fmt(offset + block.length) + ' / ' + fmt(total) + '  (milestone ' + fmt(milestone) + ')';
+    $('progPct').textContent = pct + ' %';
+  });
+
+  es.addEventListener('milestone', e => {
+    const { milestone, total_decimals } = JSON.parse(e.data);
+    currentMilestoneIdx = milestones.indexOf(milestone);
+    renderMilestones();
+    loadSnapshots();
+    toast(`Milestone ${fmt(milestone)} atteint — ${fmt(total_decimals)} décimales`, 'ok');
+  });
+
+  es.addEventListener('status', e => {
+    const { milestone } = JSON.parse(e.data);
+    toast(`Calcul du milestone ${fmt(milestone)}…`, 'info');
+  });
+
+  es.addEventListener('finished', e => {
+    const { total_decimals, elapsed_ms } = JSON.parse(e.data);
+    stopTimer(elapsed_ms);
+    setStatus('done');
+    $('btnStop').style.display = 'none';
+    $('btnContinuous').style.display = 'inline-flex';
+    $('btnGo').disabled = false;
+    continuousRunning = false;
+    toast(`Calcul continu terminé — ${fmt(total_decimals)} décimales`, 'ok');
+  });
+
+  es.addEventListener('stopped', e => {
+    const { total_decimals } = JSON.parse(e.data);
+    stopTimer(Date.now() - start);
+    setStatus('idle');
+    $('btnStop').style.display = 'none';
+    $('btnContinuous').style.display = 'inline-flex';
+    $('btnGo').disabled = false;
+    continuousRunning = false;
+    toast(`Arrêté — ${fmt(total_decimals)} décimales calculées`, 'info');
+  });
+
+  es.addEventListener('error', () => {
+    if (!continuousRunning) return;
+    setStatus('error');
+    $('btnStop').style.display = 'none';
+    $('btnContinuous').style.display = 'inline-flex';
+    $('btnGo').disabled = false;
+    continuousRunning = false;
+    toast('Erreur de connexion au flux continu.', 'error');
+  });
+
+  continuousRunning = true;
+}
+
+async function stopContinuous() {
+  try {
+    await fetch('/stop-continuous', { method:'POST' });
+  } catch {}
+  if (es) { es.close(); es = null; }
+}
+
+/* ── Presets ── */
+document.querySelectorAll('.preset').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.preset').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    $('customN').value = '';
+  });
+});
+$('customN').addEventListener('focus', () => {
+  document.querySelectorAll('.preset').forEach(x => x.classList.remove('active'));
+});
+
+/* ── Buttons ── */
+$('btnGo').addEventListener('click', goStandard);
+$('btnContinuous').addEventListener('click', goContinuous);
+$('btnStop').addEventListener('click', stopContinuous);
+$('btnReset').addEventListener('click', reset);
+
+$('btnSave').addEventListener('click', async () => {
+  try {
+    const r = await fetch('/save', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ digits: allDigits })
+    });
+    if (r.ok) { toast('Sauvegardé dans pi_digits.txt', 'ok'); updateStorage(); }
+    else toast('Échec de la sauvegarde.', 'error');
+  } catch { toast('Erreur réseau.', 'error'); }
+});
+
+$('btnDl').addEventListener('click', async () => {
+  try {
+    const r = await fetch('/stored');
+    const blob = new Blob([await r.text()], {type:'text/plain'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'pi_digits.txt'; a.click(); URL.revokeObjectURL(a.href);
+  } catch { toast('Erreur de téléchargement.', 'error'); }
+});
+
+$('btnDlComplet').addEventListener('click', async () => {
+  try {
+    const a = document.createElement('a');
+    a.href = '/complet';
+    a.download = 'pi_complet.txt'; a.click();
+  } catch { toast('Erreur de téléchargement.', 'error'); }
+});
+
+/* ── Rank search ── */
+$('rankSearch').addEventListener('input', e => {
+  const rank = parseInt(e.target.value, 10);
+  if (!rank || rank < 1) {
+    $('rankOut').textContent = 'Entrez un rang pour afficher la décimale correspondante.';
+    return;
+  }
+  const digit = allDigits[rank + 1];
+  if (digit !== undefined) {
+    $('rankOut').innerHTML = `Décimale <strong>n°${fmt(rank)}</strong> = <span class="bigDigit v${digit}">${digit}</span>`;
+    const target = document.querySelector(`.pi-digit[data-rank="${rank}"]`);
+    if (target) {
+      target.scrollIntoView({ behavior:'smooth', block:'center' });
+      target.parentElement.classList.add('search-glow');
+      setTimeout(() => target.parentElement.classList.remove('search-glow'), 2200);
+    }
+  } else {
+    $('rankOut').textContent = rank > count
+      ? `Décimale n°${fmt(rank)} non encore calculée.`
+      : 'Rang invalide.';
+  }
+});
+
+/* ── Storage stats ── */
+async function updateStorage() {
+  try {
+    const { total_digits_stored, last_computed, file_size_kb } = await (await fetch('/stats')).json();
+    $('storedCount').textContent = total_digits_stored > 0 ? fmt(total_digits_stored) : '—';
+    $('storedDate').textContent = last_computed ? new Date(last_computed).toLocaleString('fr-FR') : '—';
+  } catch {}
+}
+
+/* ── Init ── */
+renderDist(); updateStorage(); loadSnapshots(); setStatus('idle');
+setInterval(() => { updateStorage(); loadSnapshots(); }, 15000);
+</script>
+</body>
+</html>

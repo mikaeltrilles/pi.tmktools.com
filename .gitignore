@@ -1,0 +1,12 @@
+node_modules/
+data/pi_digits.txt
+data/pi_history.log
+data/pi_complet.txt
+data/pi_*.txt
+pi_*.txt
+.env
+.DS_Store
+*.log
+npm-debug.log*
+__pycache__/
+*.pyc
