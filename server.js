@@ -60,11 +60,6 @@ const BLOCK_SIZE = 100;
 const BLOCK_DELAY_MS = 80;
 const CATCHUP_BLOCK = 1000;
 
-const MILESTONES = [
-  100, 500, 1000, 5000, 10000,
-  50000, 100000, 200000, 500000, 1000000
-];
-
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 /* ── Middleware ── */
@@ -93,13 +88,6 @@ let continuousState = {
 
 function snapshotPath(n) {
   return path.join(DATA_DIR, `pi_${n}.txt`);
-}
-
-function ensureNextMilestone() {
-  const last = MILESTONES[MILESTONES.length - 1];
-  const next = last * 2; // x2 à chaque fois : 1M → 2M → 4M → 8M …
-  MILESTONES.push(next);
-  console.log(`📈 Nouveau milestone ajouté : ${next.toLocaleString('fr-FR')}`);
 }
 
 async function writeSnapshot(digits, n) {
@@ -156,22 +144,9 @@ async function loadContinuousStateFromDisk() {
 
     if (digits.length > 2) {
       continuousState.digits = digits;
-
-      // Trouver l index du dernier milestone atteint
-      let idx = -1;
-      for (let i = 0; i < MILESTONES.length; i++) {
-        if (MILESTONES[i] <= total) idx = i;
-        else break;
-      }
-
-      // Si on a dépassé tous les milestones existants, en générer de nouveaux
-      while (total >= MILESTONES[MILESTONES.length - 1]) {
-        ensureNextMilestone();
-        idx = MILESTONES.length - 1;
-      }
-
-      continuousState.milestoneIdx = idx;
-      console.log(`⏮️  Reprise depuis disque : ${total.toLocaleString('fr-FR')} décimales (milestone idx ${idx})`);
+      // milestoneIdx = nombre de pas déjà effectués
+      continuousState.milestoneIdx = Math.floor(total / STEP);
+      console.log(`⏮️  Reprise depuis disque : ${total.toLocaleString('fr-FR')} décimales (pas ${continuousState.milestoneIdx})`);
       await appendHistory(`${new Date().toISOString()} | RESUME | ${total} décimales restaurées depuis pi_complet.txt\n`);
     }
   } catch (e) {
@@ -214,20 +189,14 @@ function streamDecimalsToClients(decimals, offsetStart, total, milestone, isLive
   sendNext();
 }
 
-/* ── Logique du milestone suivant (infini) ── */
+const STEP = 1000; // calcul par pas de 1000 décimales pour un flux continu rapide
+
+/* ── Logique du calcul par pas (flux continu sans attente) ── */
 async function runNextMilestone() {
   if (!continuousState.running) return;
 
-  let nextIdx = continuousState.milestoneIdx + 1;
-
-  // Générer des milestones à l infini si besoin
-  if (nextIdx >= MILESTONES.length) {
-    ensureNextMilestone();
-    nextIdx = continuousState.milestoneIdx + 1;
-  }
-
-  const target = MILESTONES[nextIdx];
   const prevLen = continuousState.digits.length - 2;
+  const target = prevLen + STEP;
 
   broadcast('status', { status: 'computing', milestone: target, current_decimals: prevLen });
 
@@ -235,28 +204,28 @@ async function runNextMilestone() {
 
   worker.on('message', async ({ digits }) => {
     continuousState.digits = digits;
-    continuousState.milestoneIdx = nextIdx;
+    continuousState.milestoneIdx++;
 
     const newDec = digits.slice(2 + prevLen);
     const total = digits.length - 2;
 
-    // Streamer les nouvelles décimales aux clients
+    // Streamer les nouvelles décimales aux clients immédiatement
     streamDecimalsToClients(newDec, prevLen, total, target, true, prevLen);
 
-    // Sauvegardes fichiers
-    await writeSnapshot(digits, target);
+    // Sauvegardes fichiers (snapshot tous les 10 000)
+    if (target % 10000 === 0) await writeSnapshot(digits, target);
     await writeComplet(digits);
-    await appendHistory(`${new Date().toISOString()} | milestone ${target} | ${total} décimales\n`);
+    await appendHistory(`${new Date().toISOString()} | +${STEP} → ${target} | ${total} décimales\n`);
 
-    // Notifier milestone atteint
+    // Notifier
     setTimeout(() => {
       broadcast('milestone', { milestone: target, total_decimals: total });
     }, Math.ceil(newDec.length / BLOCK_SIZE) * BLOCK_DELAY_MS + 100);
 
     worker.terminate().catch(() => {});
 
-    // Pause puis suite — le calcul ne s arrête jamais
-    setTimeout(() => runNextMilestone(), 1200);
+    // Suite immédiate — pas de pause longue
+    setTimeout(() => runNextMilestone(), 400);
   });
 
   worker.on('error', (err) => {
@@ -338,7 +307,7 @@ app.post('/start-continuous', (req, res) => {
   continuousState.running = true;
   continuousState.startTime = Date.now();
   runNextMilestone();
-  res.json({ started: true, milestones: MILESTONES });
+  res.json({ started: true });
 });
 
 /* Arrêter — route gardée pour admin d urgence, mais le calcul redémarre auto */
@@ -350,12 +319,11 @@ app.post('/stop-continuous', (req, res) => {
 
 /* État du calcul continu */
 app.get('/continuous-state', (req, res) => {
+  const total = continuousState.digits.length - 2;
   res.json({
     running: continuousState.running,
-    total_decimals: continuousState.digits.length - 2,
-    current_milestone_idx: continuousState.milestoneIdx,
-    next_milestone: MILESTONES[continuousState.milestoneIdx + 1] || null,
-    milestones: MILESTONES,
+    total_decimals: total,
+    next_target: total + STEP,
     elapsed_ms: continuousState.startTime ? Date.now() - continuousState.startTime : null,
   });
 });
@@ -370,26 +338,23 @@ app.get('/stream-continuous', (req, res) => {
 
   continuousState.clients.add(res);
 
+  const total = continuousState.digits.length - 2;
   // État initial
   res.write(`event: state\ndata: ${JSON.stringify({
     running: continuousState.running,
-    total_decimals: continuousState.digits.length - 2,
-    current_milestone_idx: continuousState.milestoneIdx,
-    next_milestone: MILESTONES[continuousState.milestoneIdx + 1] || null,
-    milestones: MILESTONES,
+    total_decimals: total,
+    next_target: total + STEP,
   })}\n\n`);
 
   // Catch-up limité aux 1 000 dernières décimales pour que la grille
-  // ne soit jamais vide au moment de la connexion, sans saturer le navigateur.
+  // Mini catch-up des 1 000 dernières décimales pour que la grille ne soit pas vide
   const existing = continuousState.digits.slice(2);
   if (existing.length > 0) {
     const TAIL = 1000;
     const tail = existing.slice(-TAIL);
-    const milestone = continuousState.milestoneIdx >= 0
-      ? MILESTONES[continuousState.milestoneIdx]
-      : 0;
-    const offsetStart = existing.length - tail.length;
-    streamDecimalsToClients(tail, offsetStart, existing.length, milestone, false, offsetStart);
+    const total = existing.length;
+    const offsetStart = total - tail.length;
+    streamDecimalsToClients(tail, offsetStart, total, total + STEP, false, offsetStart);
   }
 
   req.on('close', () => {
@@ -455,7 +420,7 @@ app.get('/digit', (req, res) => {
 /* ── Démarrage + auto-start continu ── */
 app.listen(PORT, async () => {
   console.log(`π Explorer en ligne : http://localhost:${PORT}`);
-  console.log(`  Milestones : ${MILESTONES.slice(0, 10).join(', ')}…`);
+  console.log(`  Pas de calcul : +${STEP.toLocaleString('fr-FR')} décimales par cycle`);
 
   // Reprendre depuis le disque si pi_complet.txt existe
   await loadContinuousStateFromDisk();
