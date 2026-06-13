@@ -554,18 +554,24 @@ function connectContinuous() {
     $('progressWrap').style.display = 'block';
   });
 
+  function visualGoal(n) {
+    const goals = [100,500,1000,5000,10000,50000,100000,200000,500000,1000000];
+    for (const g of goals) if (n < g) return g;
+    let g = 1000000;
+    while (g <= n) g *= 2;
+    return g;
+  }
+
   es.addEventListener('digits', e => {
-    const { block, offset, milestone, milestoneStart } = JSON.parse(e.data);
+    const { block, offset } = JSON.parse(e.data);
     appendBlock(block, offset);
     $('btnSave').disabled = false;
     updateLiveCounter(totalClientDigits);
 
-    const msStart = milestoneStart || 0;
-    const msProgress = Math.max(0, totalClientDigits - msStart);
-    const msTarget = milestone - msStart;
-    const pct = msTarget > 0 ? Math.min(100, Math.round(msProgress / msTarget * 100)) : 100;
+    const goal = visualGoal(totalClientDigits);
+    const pct = goal > 0 ? Math.min(100, Math.round(totalClientDigits / goal * 100)) : 100;
     $('progressFill').style.width = pct + '%';
-    $('progDigits').textContent = fmt(totalClientDigits) + ' / ' + fmt(milestone);
+    $('progDigits').textContent = fmt(totalClientDigits) + ' / ' + fmt(goal);
     $('progPct').textContent = pct + ' %';
   });
 
@@ -577,11 +583,13 @@ function connectContinuous() {
   });
 
   es.addEventListener('status', e => {
-    const { milestone, current_decimals } = JSON.parse(e.data);
-    $('progressFill').style.width = '0%';
-    $('progDigits').textContent = `Calcul du bloc ${fmt(milestone)}…  (${fmt(current_decimals)} déjà atteintes)`;
-    $('progPct').textContent = '—';
-    toast(`Calcul du bloc ${fmt(milestone)}…`, 'info');
+    const { current_decimals } = JSON.parse(e.data);
+    const goal = visualGoal(current_decimals);
+    const pct = goal > 0 ? Math.min(100, Math.round(current_decimals / goal * 100)) : 0;
+    $('progressFill').style.width = pct + '%';
+    $('progDigits').textContent = fmt(current_decimals) + ' / ' + fmt(goal);
+    $('progPct').textContent = pct + ' %';
+    toast('Calcul continu en cours…', 'info');
   });
 
   es.addEventListener('finished', e => {
