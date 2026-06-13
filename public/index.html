@@ -458,7 +458,7 @@ function renderDist() {
       <div class="dist-row">
         <span class="dist-label">${d}</span>
         <div class="dist-track"><div class="dist-fill" style="width:${Math.min(100, pctBar)}%;background:${colors[d]}"></div></div>
-        <span class="dist-count">${fmt(c)} <span style="opacity:.6">(${pctReal}%)</span></span>
+        <span class="dist-count">${pctReal}%</span>
       </div>`;
   }).join('');
 }
