@@ -148,36 +148,6 @@ input#customN:focus { border-color:var(--cyan); }
   letter-spacing:0.06em; text-transform:uppercase;
 }
 
-/* ── Last digit highlight ── */
-.last-digit-box {
-  display:flex; align-items:center; justify-content:center; gap:0.6rem;
-  margin:0.5rem 0 0.2rem;
-}
-.last-digit-box .txt {
-  font-size:0.72rem; color:var(--text-dim); text-transform:uppercase;
-  letter-spacing:0.08em;
-}
-.last-digit-box .digit {
-  font-family:var(--font-mono); font-size:2.6rem; font-weight:800;
-  line-height:1; width:3.2rem; height:3.2rem; display:flex; align-items:center; justify-content:center;
-  border-radius:0.5rem; border:2px solid; transition:all .15s ease;
-  animation:digitPop .25s ease both;
-}
-@keyframes digitPop {
-  from { transform:scale(.6); opacity:0; }
-  to   { transform:scale(1); opacity:1; }
-}
-.last-digit-box .digit.v0 { color:#60a5fa; border-color:rgba(96,165,250,.35); background:rgba(96,165,250,.08); text-shadow:0 0 14px rgba(96,165,250,.35); }
-.last-digit-box .digit.v1 { color:#34d399; border-color:rgba(52,211,153,.35); background:rgba(52,211,153,.08); text-shadow:0 0 14px rgba(52,211,153,.35); }
-.last-digit-box .digit.v2 { color:#a78bfa; border-color:rgba(167,139,250,.35); background:rgba(167,139,250,.08); text-shadow:0 0 14px rgba(167,139,250,.35); }
-.last-digit-box .digit.v3 { color:#f472b6; border-color:rgba(244,114,182,.35); background:rgba(244,114,182,.08); text-shadow:0 0 14px rgba(244,114,182,.35); }
-.last-digit-box .digit.v4 { color:#fb923c; border-color:rgba(251,146,60,.35); background:rgba(251,146,60,.08); text-shadow:0 0 14px rgba(251,146,60,.35); }
-.last-digit-box .digit.v5 { color:#facc15; border-color:rgba(250,204,21,.35); background:rgba(250,204,21,.08); text-shadow:0 0 14px rgba(250,204,21,.35); }
-.last-digit-box .digit.v6 { color:#4ade80; border-color:rgba(74,222,128,.35); background:rgba(74,222,128,.08); text-shadow:0 0 14px rgba(74,222,128,.35); }
-.last-digit-box .digit.v7 { color:#38bdf8; border-color:rgba(56,189,248,.35); background:rgba(56,189,248,.08); text-shadow:0 0 14px rgba(56,189,248,.35); }
-.last-digit-box .digit.v8 { color:#e879f9; border-color:rgba(232,121,249,.35); background:rgba(232,121,249,.08); text-shadow:0 0 14px rgba(232,121,249,.35); }
-.last-digit-box .digit.v9 { color:#f87171; border-color:rgba(248,113,113,.35); background:rgba(248,113,113,.08); text-shadow:0 0 14px rgba(248,113,113,.35); }
-
 /* ── Milestone tracker ── */
 .milestone-track {
   display:flex; flex-wrap:wrap; gap:0.4rem; margin-bottom:1rem;
@@ -356,11 +326,6 @@ input#customN:focus { border-color:var(--cyan); }
     <div class="n" id="liveCounter">0</div>
     <div class="label">Décimales calculées</div>
   </div>
-
-  <div class="last-digit-box" id="lastDigitWrap" style="display:none;">
-    <span class="txt">Dernière décimale</span>
-    <span class="digit" id="lastDigit">–</span>
-  </div>
 </header>
 
 <!-- ═════════════════════ TOOLBAR ═════════════════════ -->
@@ -452,11 +417,8 @@ let milestones = [];
 let currentMilestoneIdx = -1;
 let continuousRunning = false;
 
-/* ── Fenêtre d'affichage glissante (live window) ── */
+/* ── Stats client ── */
 let totalClientDigits = 0;       // total reçu pour la vitesse
-const MAX_DISPLAY = 1000;        // nb max de décimales affichées dans le DOM
-let displayBuffer = [];          // [{rank, ch}] — buffer circulaire visuel
-let rebuildPending = false;
 
 /* ── Utilities ── */
 function setStatus(state) {
@@ -512,32 +474,26 @@ function renderDist() {
   }).join('');
 }
 
-/* ── Rebuild complet de la fenêtre glissante ── */
-function scheduleRebuild() {
-  if (rebuildPending) return;
-  rebuildPending = true;
+let distRafPending = false;
+function scheduleRenderDist() {
+  if (distRafPending) return;
+  distRafPending = true;
   requestAnimationFrame(() => {
-    rebuildDisplay();
-    rebuildPending = false;
+    renderDist();
+    distRafPending = false;
   });
 }
 
-function rebuildDisplay() {
-  const stage = $('piStage');
-  stage.innerHTML = '';
-  count = 0;
-  dist.fill(0);
-  currentRow = null;
-  currentRowStartRank = 1;
-  rowCellCount = 0;
-
-  displayBuffer.forEach(({rank, ch}) => {
+function appendBlock(block, offset) {
+  const frag = document.createDocumentFragment();
+  block.split('').forEach((ch, i) => {
+    const rank = offset + i + 1;
     if (!currentRow || rowCellCount >= 10) {
       if (currentRowStartRank > 1 && (currentRowStartRank - 1) % 100 === 0) {
         const sep = document.createElement('div');
         sep.className = 'century-rule';
         sep.innerHTML = '<div class="line"></div><div class="text">'+(currentRowStartRank-1)+'</div><div class="line"></div>';
-        stage.appendChild(sep);
+        frag.appendChild(sep);
       }
       currentRow = document.createElement('div');
       currentRow.className = 'pi-row';
@@ -545,7 +501,7 @@ function rebuildDisplay() {
       label.className = 'row-label';
       label.textContent = currentRowStartRank;
       currentRow.appendChild(label);
-      stage.appendChild(currentRow);
+      frag.appendChild(currentRow);
       rowCellCount = 0;
     }
     const cell = document.createElement('span');
@@ -563,25 +519,14 @@ function rebuildDisplay() {
     currentRow.appendChild(cell);
     dist[parseInt(ch)]++;
     count++;
+    totalClientDigits++;
     rowCellCount++;
     if (rowCellCount >= 10) currentRowStartRank = rank + 1;
   });
-
-  renderDist();
-  // Auto-scroll vers le dernier chiffre
+  const stage = $('piStage');
+  stage.appendChild(frag);
+  scheduleRenderDist();
   stage.scrollTop = stage.scrollHeight;
-}
-
-function appendBlock(block, offset) {
-  block.split('').forEach((ch, i) => {
-    const rank = offset + i + 1;
-    displayBuffer.push({rank, ch});
-    totalClientDigits++;
-  });
-  if (displayBuffer.length > MAX_DISPLAY) {
-    displayBuffer = displayBuffer.slice(-MAX_DISPLAY);
-  }
-  scheduleRebuild();
 }
 
 /* ── Reset / Resync ── */
@@ -589,7 +534,7 @@ function hardReset() {
   if (es) { es.close(); es = null; }
   clearInterval(timerInt);
   $('piStage').innerHTML = '';
-  count = 0; totalClientDigits = 0; displayBuffer = [];
+  count = 0; totalClientDigits = 0;
   dist.fill(0); allDigits = '3.';
   currentRow = null; currentRowStartRank = 1; rowCellCount = 0;
   $('chrono').textContent = '0.00 s';
@@ -599,8 +544,6 @@ function hardReset() {
   $('progPct').textContent = '0 %';
   $('liveCounter').textContent = '0';
   $('liveCounterWrap').style.display = 'none';
-  $('lastDigit').textContent = '–';
-  $('lastDigitWrap').style.display = 'none';
   $('btnSave').disabled = true;
   $('milestoneTrack').innerHTML = '';
   setStatus('idle');
@@ -654,17 +597,6 @@ function updateLiveCounter(n) {
   $('liveCounterWrap').style.display = 'block';
 }
 
-function updateLastDigit(ch) {
-  const box = $('lastDigit');
-  box.className = 'digit v' + ch;
-  box.textContent = ch;
-  // re-trigger animation
-  box.style.animation = 'none';
-  void box.offsetWidth;
-  box.style.animation = '';
-  $('lastDigitWrap').style.display = 'flex';
-}
-
 function connectContinuous() {
   if (es) { try { es.close(); } catch {} }
   $('progressWrap').style.display = 'block';
@@ -690,7 +622,6 @@ function connectContinuous() {
 
     const currentTotal = offset + block.length;
     updateLiveCounter(currentTotal);
-    if (block.length) updateLastDigit(block[block.length - 1]);
 
     const msStart = milestoneStart || 0;
     const msProgress = Math.max(0, currentTotal - msStart);
