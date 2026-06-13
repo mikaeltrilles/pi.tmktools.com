@@ -134,6 +134,20 @@ input#customN:focus { border-color:var(--cyan); }
   border:1px solid rgba(34,211,238,0.15);
 }
 
+/* ── Live decimal counter ── */
+.live-counter {
+  text-align:center; margin:0.6rem 0 0.2rem;
+}
+.live-counter .n {
+  font-family:var(--font-mono); font-size:2.4rem; font-weight:700;
+  color:var(--cyan); line-height:1; letter-spacing:-0.02em;
+  text-shadow:0 0 18px rgba(34,211,238,0.25);
+}
+.live-counter .label {
+  font-size:0.68rem; color:var(--text-faint); margin-top:0.25rem;
+  letter-spacing:0.06em; text-transform:uppercase;
+}
+
 /* ── Milestone tracker ── */
 .milestone-track {
   display:flex; flex-wrap:wrap; gap:0.4rem; margin-bottom:1rem;
@@ -306,6 +320,11 @@ input#customN:focus { border-color:var(--cyan); }
     <div class="chrono" id="chrono">0.00 s</div>
     <div class="chrono" id="speed" style="color:var(--magenta);border-color:rgba(192,132,252,0.2);background:rgba(192,132,252,0.06);">0 dec/s</div>
     <div class="mode-badge" id="modeBadge" style="display:none;">Mode continu</div>
+  </div>
+
+  <div class="live-counter" id="liveCounterWrap" style="display:none;">
+    <div class="n" id="liveCounter">0</div>
+    <div class="label">Décimales calculées</div>
   </div>
 </header>
 
@@ -543,6 +562,8 @@ function hardReset() {
   $('progressFill').style.width = '0%';
   $('progDigits').textContent = '0 / 0';
   $('progPct').textContent = '0 %';
+  $('liveCounter').textContent = '0';
+  $('liveCounterWrap').style.display = 'none';
   $('btnSave').disabled = true;
   $('milestoneTrack').innerHTML = '';
   setStatus('idle');
@@ -591,11 +612,17 @@ window.downloadSnapshot = async function(n) {
 let reconnectDelay = 1000;
 let serverTotalDigits = 0;
 
+function updateLiveCounter(n) {
+  $('liveCounter').textContent = fmt(n);
+  $('liveCounterWrap').style.display = 'block';
+}
+
 function connectContinuous() {
   if (es) { try { es.close(); } catch {} }
   $('progressWrap').style.display = 'block';
   setStatus('computing');
   startTimer();
+  updateLiveCounter(0);
 
   es = new EventSource('/stream-continuous');
 
@@ -604,6 +631,7 @@ function connectContinuous() {
     milestones = st.milestones || milestones;
     currentMilestoneIdx = st.current_milestone_idx;
     serverTotalDigits = st.total_decimals || 0;
+    updateLiveCounter(serverTotalDigits);
     renderMilestones();
   });
 
@@ -612,12 +640,15 @@ function connectContinuous() {
     appendBlock(block, offset);
     $('btnSave').disabled = false;
 
+    const currentTotal = offset + block.length;
+    updateLiveCounter(currentTotal);
+
     const msStart = milestoneStart || 0;
-    const msProgress = Math.max(0, offset + block.length - msStart);
+    const msProgress = Math.max(0, currentTotal - msStart);
     const msTarget = milestone - msStart;
     const pct = msTarget > 0 ? Math.min(100, Math.round(msProgress / msTarget * 100)) : 100;
     $('progressFill').style.width = pct + '%';
-    $('progDigits').textContent = fmt(offset + block.length) + ' / ' + fmt(milestone) + '  (milestone ' + fmt(milestone) + ')';
+    $('progDigits').textContent = fmt(currentTotal) + ' / ' + fmt(milestone) + '  (milestone ' + fmt(milestone) + ')';
     $('progPct').textContent = pct + ' %';
   });
 
