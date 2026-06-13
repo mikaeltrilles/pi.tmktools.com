@@ -83,12 +83,6 @@ body::before {
 .badge.warn .dot{ background:var(--amber); }
 @keyframes breathe { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.35;transform:scale(.65)} }
 
-.chrono {
-  font-family:var(--font-mono); font-size:0.85rem; color:var(--cyan);
-  background:rgba(34,211,238,0.08); padding:0.35rem 0.7rem; border-radius:0.375rem;
-  border:1px solid rgba(34,211,238,0.15); min-width:6.5ch; text-align:center;
-}
-
 /* ── Toolbar ── */
 .toolbar {
   display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center;
@@ -158,7 +152,7 @@ input#customN:focus { border-color:var(--cyan); }
   font-size:0.8rem; display:block; text-align:center; padding-top:3rem;
 }
 
-.pi-row { display:flex; align-items:flex-end; gap:0.6rem; margin-bottom:0.5rem; }
+.pi-row { display:flex; align-items:flex-end; justify-content:space-evenly; margin-bottom:0.5rem; }
 .row-label {
   font-family:var(--font-mono); font-size:0.6rem; color:var(--text-faint);
   width:2.2rem; text-align:right; padding-right:0.5rem; flex-shrink:0;
@@ -166,7 +160,7 @@ input#customN:focus { border-color:var(--cyan); }
 }
 .row-label::before { content:"#"; opacity:.5; }
 
-.pi-cell { display:flex; flex-direction:column; align-items:center; width:2.2rem; flex-shrink:0; }
+.pi-cell { display:flex; flex-direction:column; align-items:center; flex:1; }
 .pi-digit {
   font-family:var(--font-mono); font-size:0.95rem; font-weight:700;
   line-height:1.2; display:block; text-align:center;
@@ -304,8 +298,6 @@ input#customN:focus { border-color:var(--cyan); }
 
   <div class="status-bar">
     <div class="badge" id="statusBadge"><span class="dot"></span><span id="statusText">Prêt</span></div>
-    <div class="chrono" id="chrono">0.00 s</div>
-    <div class="chrono" id="speed" style="color:var(--magenta);border-color:rgba(192,132,252,0.2);background:rgba(192,132,252,0.06);">0 dec/s</div>
     <div class="mode-badge" id="modeBadge" style="display:none;">Mode continu</div>
   </div>
 
@@ -397,8 +389,6 @@ let es = null;
 let allDigits = '3.';
 let count = 0;
 let target = 0;
-let start = 0;
-let timerInt = null;
 let dist = new Array(10).fill(0);
 let currentRow = null;
 let currentRowStartRank = 1;
@@ -424,28 +414,6 @@ function toast(msg, type='info') {
   setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 250); }, 3000);
 }
 function fmt(n) { return n.toLocaleString('fr-FR'); }
-function fmtTime(ms) {
-  const s = ms/1000;
-  return s < 60 ? s.toFixed(2)+' s' : Math.floor(s/60)+' m '+Math.floor(s%60)+' s';
-}
-
-/* ── Timer ── */
-function startTimer() {
-  start = Date.now();
-  clearInterval(timerInt);
-  timerInt = setInterval(() => {
-    const elapsed = Date.now() - start;
-    $('chrono').textContent = fmtTime(elapsed);
-    const speed = elapsed > 0 ? (totalClientDigits / (elapsed/1000)).toFixed(0) : 0;
-    $('speed').textContent = speed + ' dec/s';
-  }, 80);
-}
-function stopTimer(finalMs) {
-  clearInterval(timerInt);
-  $('chrono').textContent = fmtTime(finalMs);
-  const speed = finalMs > 0 ? (totalClientDigits / (finalMs/1000)).toFixed(0) : 0;
-  $('speed').textContent = speed + ' dec/s';
-}
 
 /* ── Distribution (pourcentage sur le total calculé) ── */
 function renderDist() {
@@ -521,13 +489,10 @@ function appendBlock(block, offset) {
 /* ── Reset / Resync ── */
 function hardReset() {
   if (es) { es.close(); es = null; }
-  clearInterval(timerInt);
   $('piStage').innerHTML = '';
   count = 0; totalClientDigits = 0;
   dist.fill(0); allDigits = '3.';
   currentRow = null; currentRowStartRank = 1; rowCellCount = 0;
-  $('chrono').textContent = '0.00 s';
-  $('speed').textContent = '0 dec/s';
   $('progressFill').style.width = '0%';
   $('progDigits').textContent = '0 / 0';
   $('progPct').textContent = '0 %';
@@ -578,7 +543,6 @@ function connectContinuous() {
   if (es) { try { es.close(); } catch {} }
   $('progressWrap').style.display = 'block';
   setStatus('computing');
-  startTimer();
   updateLiveCounter(0);
 
   es = new EventSource('/stream-continuous');
@@ -591,18 +555,17 @@ function connectContinuous() {
   });
 
   es.addEventListener('digits', e => {
-    const { block, offset, total, milestone, milestoneStart } = JSON.parse(e.data);
+    const { block, offset, milestone, milestoneStart } = JSON.parse(e.data);
     appendBlock(block, offset);
     $('btnSave').disabled = false;
-    const currentTotal = offset + block.length;
-    updateLiveCounter(currentTotal);
+    updateLiveCounter(totalClientDigits);
 
     const msStart = milestoneStart || 0;
-    const msProgress = Math.max(0, currentTotal - msStart);
+    const msProgress = Math.max(0, totalClientDigits - msStart);
     const msTarget = milestone - msStart;
     const pct = msTarget > 0 ? Math.min(100, Math.round(msProgress / msTarget * 100)) : 100;
     $('progressFill').style.width = pct + '%';
-    $('progDigits').textContent = fmt(currentTotal) + ' / ' + fmt(milestone);
+    $('progDigits').textContent = fmt(totalClientDigits) + ' / ' + fmt(milestone);
     $('progPct').textContent = pct + ' %';
   });
 
@@ -622,8 +585,7 @@ function connectContinuous() {
   });
 
   es.addEventListener('finished', e => {
-    const { total_decimals, elapsed_ms } = JSON.parse(e.data);
-    stopTimer(elapsed_ms);
+    const { total_decimals } = JSON.parse(e.data);
     setStatus('done');
     continuousRunning = false;
     toast(`${fmt(total_decimals)} décimales calculées`, 'ok');
@@ -631,7 +593,6 @@ function connectContinuous() {
 
   es.addEventListener('stopped', e => {
     const { total_decimals } = JSON.parse(e.data);
-    stopTimer(Date.now() - start);
     setStatus('idle');
     continuousRunning = false;
     toast(`${fmt(total_decimals)} décimales calculées`, 'info');

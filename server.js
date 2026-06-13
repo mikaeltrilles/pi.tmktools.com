@@ -281,12 +281,12 @@ app.get('/stored', async (req, res) => {
 
 app.get('/stats', async (req, res) => {
   try {
-    const st = await fs.promises.stat(DATA_FILE);
-    const txt = await fs.promises.readFile(DATA_FILE, 'utf8');
+    const st = await fs.promises.stat(COMPLET_FILE);
+    const txt = await fs.promises.readFile(COMPLET_FILE, 'utf8');
     let total = 0, last = null;
     for (const l of txt.split('\n')) {
-      if (l.startsWith('# Nombre de décimales :')) total = parseInt(l.split(':')[1].trim(), 10) || 0;
-      if (l.startsWith('# Généré le :')) last = new Date(l.split(':').slice(1).join(':').trim()).toISOString();
+      if (l.startsWith('# Nombre total de décimales :')) total = parseInt(l.split(':')[1].trim(), 10) || 0;
+      if (l.startsWith('# Dernière mise à jour :')) last = new Date(l.split(':').slice(1).join(':').trim()).toISOString();
     }
     res.json({ total_digits_stored: total, last_computed: last, file_size_kb: Math.round(st.size / 1024 * 10) / 10 });
   } catch (e) {
