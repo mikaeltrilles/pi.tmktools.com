@@ -247,7 +247,10 @@ input#customN:focus { border-color:var(--cyan); }
 .rank-input:focus { border-color:var(--cyan); }
 .rank-out { font-size:0.78rem; color:var(--text-dim); min-height:2rem; }
 .rank-out strong { color:var(--text-main); }
-.rank-out .bigDigit { display:inline-block; font-family:var(--font-mono); font-size:1.4rem; font-weight:700; color:var(--cyan); margin-left:0.3rem; vertical-align:middle; text-shadow:0 0 12px var(--pi-glow); }
+.rank-out .bigDigit { display:inline-block; font-family:var(--font-mono); font-size:1.4rem; font-weight:700; color:var(--cyan); margin-left:0.3rem; vertical-align:middle; text-shadow:0 0 12px var(--pi-glow); cursor:pointer; }
+.rank-out .bigDigit:hover { color:var(--amber); }
+.rank-out .search-pos { color:var(--cyan); cursor:pointer; text-decoration:underline; text-decoration-color:rgba(34,211,238,0.3); }
+.rank-out .search-pos:hover { color:var(--amber); text-decoration-color:var(--amber); }
 
 /* ── Toast ── */
 .toast {
@@ -415,6 +418,19 @@ function toast(msg, type='info') {
   setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 250); }, 3000);
 }
 function fmt(n) { return n.toLocaleString('fr-FR'); }
+
+/* ── Scroll vers un rang dans la grille ── */
+function scrollToRank(rank) {
+  const target = document.querySelector(`.pi-digit[data-rank="${rank}"]`);
+  if (target) {
+    target.scrollIntoView({ behavior:'smooth', block:'center' });
+    target.parentElement.classList.add('search-glow');
+    setTimeout(() => target.parentElement.classList.remove('search-glow'), 2500);
+    return true;
+  }
+  toast(`Décimale n°${fmt(rank)} hors de la fenêtre affichée`, 'info');
+  return false;
+}
 
 /* ── Distribution (pourcentage sur le total calculé) ── */
 function renderDist() {
@@ -741,13 +757,7 @@ $('rankSearch').addEventListener('input', async (e) => {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const { digit, available } = await r.json();
     if (digit !== null) {
-      $('rankOut').innerHTML = `Décimale <strong>n°${fmt(rank)}</strong> = <span class="bigDigit v${digit}">${digit}</span>`;
-      const target = document.querySelector(`.pi-digit[data-rank="${rank}"]`);
-      if (target) {
-        target.scrollIntoView({ behavior:'smooth', block:'center' });
-        target.parentElement.classList.add('search-glow');
-        setTimeout(() => target.parentElement.classList.remove('search-glow'), 2200);
-      }
+      $('rankOut').innerHTML = `Décimale <strong>n°${fmt(rank)}</strong> = <span class="bigDigit v${digit}" onclick="scrollToRank(${rank})" title="Cliquer pour localiser">${digit}</span>`;
     } else {
       $('rankOut').textContent = `Décimale n°${fmt(rank)} non encore calculée (${fmt(available)} disponibles).`;
     }
@@ -773,7 +783,7 @@ $('chainSearch').addEventListener('input', async (e) => {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const { positions, total_checked } = await r.json();
     if (positions.length) {
-      const list = positions.slice(0, 5).map(p => `<span class="bigDigit">#${fmt(p)}</span>`).join(', ');
+      const list = positions.slice(0, 5).map(p => `<span class="search-pos" onclick="scrollToRank(${p})" title="Cliquer pour localiser">#${fmt(p)}</span>`).join(', ');
       const more = positions.length > 5 ? ` et ${fmt(positions.length - 5)} autres` : '';
       $('chainOut').innerHTML = `Trouvé ${fmt(positions.length)}×  (vérifié ${fmt(total_checked)} décimales) : ${list}${more}`;
     } else {
