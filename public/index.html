@@ -297,7 +297,7 @@ input#customN:focus { border-color:var(--cyan); }
     </svg>
     <div>
       <h1>π <span>Explorer</span></h1>
-      <div class="tagline">CALCUL DE PRÉCISION ARBITRAIRE EN TEMPS RÉEL</div>
+      <div class="tagline">CALCUL SCIENTIFIQUE DE HAUTE PRÉCISION — EXPLORATION CONTINUE DE π</div>
     </div>
   </div>
 
@@ -312,19 +312,9 @@ input#customN:focus { border-color:var(--cyan); }
 <!-- ═════════════════════ TOOLBAR ═════════════════════ -->
 <div class="toolbar">
   <div class="toolbar-group">
-    <div class="preset-group">
-      <button class="preset active" data-n="100">100</button>
-      <button class="preset" data-n="500">500</button>
-      <button class="preset" data-n="1000">1 000</button>
-      <button class="preset" data-n="5000">5 000</button>
-      <button class="preset" data-n="10000">10 000</button>
-      <input type="number" id="customN" min="10" max="100000" placeholder="Custom…">
-    </div>
-    <button id="btnGo" class="btn btn-go">▶ Calculer</button>
-    <button id="btnContinuous" class="btn btn-continuous">♾ Mode continu</button>
-    <button id="btnStop" class="btn btn-stop" style="display:none;">⏹ Arrêter</button>
+    <div class="mode-badge" id="modeBadge">Calcul continu actif</div>
     <button id="btnSave" class="btn btn-save" disabled>💾 Sauvegarder</button>
-    <button id="btnReset" class="btn btn-reset">↺ Reset</button>
+    <button id="btnReset" class="btn btn-reset">↺ Resync</button>
   </div>
 </div>
 
@@ -508,7 +498,7 @@ function appendBlock(block, offset) {
   renderDist();
 }
 
-/* ── Reset ── */
+/* ── Reset / Resync ── */
 function reset() {
   if (es) { es.close(); es = null; }
   clearInterval(timerInt);
@@ -522,15 +512,13 @@ function reset() {
   $('progDigits').textContent = '0 / 0';
   $('progPct').textContent = '0 %';
   $('btnSave').disabled = true;
-  $('btnGo').disabled = false;
-  $('btnContinuous').style.display = 'inline-flex';
-  $('btnStop').style.display = 'none';
-  $('modeBadge').style.display = 'none';
   $('milestoneTrack').style.display = 'none';
   $('milestoneTrack').innerHTML = '';
   setStatus('idle');
   renderDist();
   $('rankOut').textContent = 'Entrez un rang pour afficher la décimale correspondante.';
+  // Reconnecte immédiatement au flux continu serveur
+  connectContinuous();
 }
 
 /* ── Milestone chips ── */
@@ -568,81 +556,14 @@ window.downloadSnapshot = async function(n) {
 };
 
 /* ════════════════════════════════════════════════════════════════════════════
-   MODE STANDARD
+   CONNEXION SSE CONTINUE — Auto-démarrée, jamais arrêtable côté serveur
    ════════════════════════════════════════════════════════════════════════════ */
-function selectedN() {
-  const a = document.querySelector('.preset.active');
-  if (a) return parseInt(a.dataset.n, 10);
-  const v = parseInt($('customN').value, 10);
-  return (v >= 10 && v <= 100000) ? v : 1000;
-}
-
-function goStandard() {
-  reset();
-  mode = 'standard';
-  target = selectedN();
-  $('progressWrap').style.display = 'block';
-  $('btnGo').disabled = true;
-  $('btnContinuous').disabled = true;
-  setStatus('computing');
-  startTimer();
-
-  es = new EventSource(`/stream?n=${target}`);
-
-  es.addEventListener('digits', e => {
-    const { block, offset, total } = JSON.parse(e.data);
-    appendBlock(block, offset);
-    const pct = Math.min(100, Math.round((offset + block.length) / total * 100));
-    $('progressFill').style.width = pct + '%';
-    $('progDigits').textContent = fmt(offset + block.length) + ' / ' + fmt(total);
-    $('progPct').textContent = pct + ' %';
-  });
-
-  es.addEventListener('done', e => {
-    const { digits, elapsed_ms } = JSON.parse(e.data);
-    allDigits = digits;
-    stopTimer(elapsed_ms);
-    setStatus('done');
-    $('btnSave').disabled = false;
-    $('btnGo').disabled = false;
-    $('btnContinuous').disabled = false;
-    es.close(); es = null;
-    $('progressFill').style.width = '100%';
-    $('progPct').textContent = '100 %';
-    toast(`Terminé : ${fmt(count)} décimales en ${fmtTime(elapsed_ms)}`, 'ok');
-  });
-
-  es.addEventListener('error', () => {
-    setStatus('error');
-    $('btnGo').disabled = false;
-    $('btnContinuous').disabled = false;
-    stopTimer(Date.now() - start);
-    es.close(); es = null;
-    toast('Erreur de connexion.', 'error');
-  });
-}
-
-/* ════════════════════════════════════════════════════════════════════════════
-   MODE CONTINU
-   ════════════════════════════════════════════════════════════════════════════ */
-async function goContinuous() {
-  reset();
-  mode = 'continuous';
-  $('btnContinuous').style.display = 'none';
-  $('btnStop').style.display = 'inline-flex';
-  $('btnGo').disabled = true;
-  $('modeBadge').style.display = 'inline-flex';
+function connectContinuous() {
+  // Ne pas réinitialiser le compteur global — on fait un catch-up
   $('progressWrap').style.display = 'block';
   setStatus('computing');
   startTimer();
 
-  // Démarrer le calcul côté serveur
-  const startRes = await fetch('/start-continuous', { method:'POST' });
-  const startData = await startRes.json();
-  milestones = startData.milestones || [];
-  renderMilestones();
-
-  // Ouvrir le SSE continu
   es = new EventSource('/stream-continuous');
 
   es.addEventListener('state', e => {
@@ -655,7 +576,6 @@ async function goContinuous() {
   es.addEventListener('digits', e => {
     const { block, offset, total, milestone } = JSON.parse(e.data);
     appendBlock(block, offset);
-    // Progression relative au milestone courant
     const pct = Math.min(100, Math.round((offset + block.length) / total * 100));
     $('progressFill').style.width = pct + '%';
     $('progDigits').textContent = fmt(offset + block.length) + ' / ' + fmt(total) + '  (milestone ' + fmt(milestone) + ')';
@@ -679,9 +599,6 @@ async function goContinuous() {
     const { total_decimals, elapsed_ms } = JSON.parse(e.data);
     stopTimer(elapsed_ms);
     setStatus('done');
-    $('btnStop').style.display = 'none';
-    $('btnContinuous').style.display = 'inline-flex';
-    $('btnGo').disabled = false;
     continuousRunning = false;
     toast(`Calcul continu terminé — ${fmt(total_decimals)} décimales`, 'ok');
   });
@@ -690,19 +607,12 @@ async function goContinuous() {
     const { total_decimals } = JSON.parse(e.data);
     stopTimer(Date.now() - start);
     setStatus('idle');
-    $('btnStop').style.display = 'none';
-    $('btnContinuous').style.display = 'inline-flex';
-    $('btnGo').disabled = false;
     continuousRunning = false;
     toast(`Arrêté — ${fmt(total_decimals)} décimales calculées`, 'info');
   });
 
   es.addEventListener('error', () => {
-    if (!continuousRunning) return;
     setStatus('error');
-    $('btnStop').style.display = 'none';
-    $('btnContinuous').style.display = 'inline-flex';
-    $('btnGo').disabled = false;
     continuousRunning = false;
     toast('Erreur de connexion au flux continu.', 'error');
   });
@@ -710,29 +620,7 @@ async function goContinuous() {
   continuousRunning = true;
 }
 
-async function stopContinuous() {
-  try {
-    await fetch('/stop-continuous', { method:'POST' });
-  } catch {}
-  if (es) { es.close(); es = null; }
-}
-
-/* ── Presets ── */
-document.querySelectorAll('.preset').forEach(b => {
-  b.addEventListener('click', () => {
-    document.querySelectorAll('.preset').forEach(x => x.classList.remove('active'));
-    b.classList.add('active');
-    $('customN').value = '';
-  });
-});
-$('customN').addEventListener('focus', () => {
-  document.querySelectorAll('.preset').forEach(x => x.classList.remove('active'));
-});
-
 /* ── Buttons ── */
-$('btnGo').addEventListener('click', goStandard);
-$('btnContinuous').addEventListener('click', goContinuous);
-$('btnStop').addEventListener('click', stopContinuous);
 $('btnReset').addEventListener('click', reset);
 
 $('btnSave').addEventListener('click', async () => {
@@ -796,8 +684,9 @@ async function updateStorage() {
   } catch {}
 }
 
-/* ── Init ── */
+/* ── Init ── Auto-connect au chargement ── */
 renderDist(); updateStorage(); loadSnapshots(); setStatus('idle');
+connectContinuous();
 setInterval(() => { updateStorage(); loadSnapshots(); }, 15000);
 </script>
 </body>

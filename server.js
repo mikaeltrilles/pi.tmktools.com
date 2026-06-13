@@ -1,10 +1,9 @@
 /**
  * π Explorer — Backend Node.js/Express
  *
- * Deux modes de calcul :
- *   1. Standard   : POST /save + SSE /stream (précision fixe)
- *   2. Continu    : calcul en arrière-plan via milestones,
- *                   snapshots pi_1000.txt … pi_complet.txt
+ * Calcul continu de π, jamais arrêtable.
+ * Reprise automatique depuis data/pi_complet.txt au démarrage.
+ * Milestones dynamiques : le calcul ne s arrête jamais.
  */
 
 const express = require('express');
@@ -14,7 +13,7 @@ const { Worker, isMainThread, parentPort, workerData } = require('worker_threads
 const { EventEmitter } = require('events');
 
 /* ════════════════════════════════════════════════════════════════════════════
-   WORKER — Machin BigInt (même thread, section isolée)
+   WORKER — Machin BigInt
    ════════════════════════════════════════════════════════════════════════════ */
 if (!isMainThread) {
   const { precision } = workerData;
@@ -52,15 +51,14 @@ if (!isMainThread) {
    ════════════════════════════════════════════════════════════════════════════ */
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'pi_digits.txt');
 const HISTORY_FILE = path.join(DATA_DIR, 'pi_history.log');
 const COMPLET_FILE = path.join(DATA_DIR, 'pi_complet.txt');
-const MAX_PRECISION = 1_000_000;
 const BLOCK_SIZE = 50;
 const BLOCK_DELAY_MS = 150;
-const CATCHUP_BLOCK = 500; // blocs plus gros pour le rattrapage continu
+const CATCHUP_BLOCK = 500;
 
 const MILESTONES = [
   100, 500, 1000, 5000, 10000,
@@ -79,11 +77,6 @@ app.use((req, res, next) => {
   next();
 });
 
-function clientIp(req) {
-  return req.headers['x-forwarded-for']?.split(',')[0].trim()
-    || req.socket.remoteAddress || 'unknown';
-}
-
 /* ════════════════════════════════════════════════════════════════════════════
    MODE CONTINU — État global + EventEmitter
    ════════════════════════════════════════════════════════════════════════════ */
@@ -95,11 +88,18 @@ let continuousState = {
   digits: '3.',
   milestoneIdx: -1,
   startTime: null,
-  clients: new Set(), // res SSE actifs
+  clients: new Set(),
 };
 
 function snapshotPath(n) {
   return path.join(DATA_DIR, `pi_${n}.txt`);
+}
+
+function ensureNextMilestone() {
+  const last = MILESTONES[MILESTONES.length - 1];
+  const next = last * 2; // x2 à chaque fois : 1M → 2M → 4M → 8M …
+  MILESTONES.push(next);
+  console.log(`📈 Nouveau milestone ajouté : ${next.toLocaleString('fr-FR')}`);
 }
 
 async function writeSnapshot(digits, n) {
@@ -132,7 +132,58 @@ async function appendHistory(line) {
   await fs.promises.appendFile(HISTORY_FILE, line, 'utf8');
 }
 
-/* ── Envoi des blocs à tous les clients SSE connectés ── */
+/* ── Reprise depuis le fichier complet ── */
+async function loadContinuousStateFromDisk() {
+  try {
+    const content = await fs.promises.readFile(COMPLET_FILE, 'utf8');
+    const lines = content.split('\n');
+    let total = 0;
+    let digits = '3.';
+
+    for (const line of lines) {
+      if (line.startsWith('# Nombre total de décimales :')) {
+        total = parseInt(line.split(':')[1].trim(), 10) || 0;
+      }
+    }
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('3.')) {
+        digits = trimmed;
+        break;
+      }
+    }
+
+    if (digits.length > 2) {
+      continuousState.digits = digits;
+
+      // Trouver l index du dernier milestone atteint
+      let idx = -1;
+      for (let i = 0; i < MILESTONES.length; i++) {
+        if (MILESTONES[i] <= total) idx = i;
+        else break;
+      }
+
+      // Si on a dépassé tous les milestones existants, en générer de nouveaux
+      while (total >= MILESTONES[MILESTONES.length - 1]) {
+        ensureNextMilestone();
+        idx = MILESTONES.length - 1;
+      }
+
+      continuousState.milestoneIdx = idx;
+      console.log(`⏮️  Reprise depuis disque : ${total.toLocaleString('fr-FR')} décimales (milestone idx ${idx})`);
+      await appendHistory(`${new Date().toISOString()} | RESUME | ${total} décimales restaurées depuis pi_complet.txt\n`);
+    }
+  } catch (e) {
+    if (e.code === 'ENOENT') {
+      console.log('🆕 Nouveau démarrage — aucun pi_complet.txt trouvé');
+    } else {
+      console.error('Erreur lecture pi_complet.txt :', e.message);
+    }
+  }
+}
+
+/* ── Broadcast SSE ── */
 function broadcast(event, payload) {
   const data = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
   for (const res of continuousState.clients) {
@@ -140,10 +191,10 @@ function broadcast(event, payload) {
   }
 }
 
-/* ── Découpage et envoi avec délai entre blocs ── */
+/* ── Stream décimales aux clients ── */
 function streamDecimalsToClients(decimals, offsetStart, total, milestone, isLive = true) {
   const chunkSize = isLive ? BLOCK_SIZE : CATCHUP_BLOCK;
-  const delay = isLive ? BLOCK_DELAY_MS : 20; // catchup ultra-rapide
+  const delay = isLive ? BLOCK_DELAY_MS : 20;
 
   let offset = offsetStart;
   let idx = 0;
@@ -163,19 +214,16 @@ function streamDecimalsToClients(decimals, offsetStart, total, milestone, isLive
   sendNext();
 }
 
-/* ── Logique du milestone suivant ── */
+/* ── Logique du milestone suivant (infini) ── */
 async function runNextMilestone() {
   if (!continuousState.running) return;
 
-  const nextIdx = continuousState.milestoneIdx + 1;
+  let nextIdx = continuousState.milestoneIdx + 1;
+
+  // Générer des milestones à l infini si besoin
   if (nextIdx >= MILESTONES.length) {
-    continuousState.running = false;
-    broadcast('finished', {
-      total_decimals: continuousState.digits.length - 2,
-      elapsed_ms: Date.now() - continuousState.startTime
-    });
-    appendHistory(`${new Date().toISOString()} | FINISHED | ${continuousState.digits.length - 2} décimales\n`);
-    return;
+    ensureNextMilestone();
+    nextIdx = continuousState.milestoneIdx + 1;
   }
 
   const target = MILESTONES[nextIdx];
@@ -189,7 +237,7 @@ async function runNextMilestone() {
     continuousState.digits = digits;
     continuousState.milestoneIdx = nextIdx;
 
-    const newDec = digits.slice(2 + prevLen); // portion fraîche
+    const newDec = digits.slice(2 + prevLen);
     const total = digits.length - 2;
 
     // Streamer les nouvelles décimales aux clients
@@ -207,15 +255,16 @@ async function runNextMilestone() {
 
     worker.terminate().catch(() => {});
 
-    // Pause puis suite
+    // Pause puis suite — le calcul ne s arrête jamais
     setTimeout(() => runNextMilestone(), 1200);
   });
 
   worker.on('error', (err) => {
-    console.error('Continuous worker error:', err);
-    continuousState.running = false;
+    console.error('Continuous worker error :', err);
     broadcast('error', { message: err.message });
     worker.terminate().catch(() => {});
+    // Retry après 5s — le calcul ne doit jamais s arrêter
+    setTimeout(() => runNextMilestone(), 5000);
   });
 }
 
@@ -227,66 +276,7 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-/* ── STANDARD SSE ── */
-app.get('/stream', (req, res) => {
-  const n = parseInt(req.query.n, 10) || 1000;
-  const precision = Math.min(Math.max(n, 1), MAX_PRECISION);
-  const ip = clientIp(req);
-
-  const activeStreams = new Map(); // simple local scope
-  if (activeStreams.has(ip)) {
-    return res.status(429).json({ error: 'Un seul flux par IP.' });
-  }
-  activeStreams.set(ip, res);
-
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders?.();
-
-  const t0 = Date.now();
-  const worker = new Worker(__filename, { workerData: { precision } });
-
-  worker.on('message', ({ digits }) => {
-    const dec = digits.slice(2);
-    let offset = 0;
-    const iv = setInterval(() => {
-      if (offset >= dec.length) {
-        clearInterval(iv);
-        const elapsed = Date.now() - t0;
-        res.write(`event: done\ndata: ${JSON.stringify({ digits, elapsed_ms: elapsed })}\n\n`);
-        res.end();
-        activeStreams.delete(ip);
-        worker.terminate().catch(() => {});
-        return;
-      }
-      const block = dec.slice(offset, offset + BLOCK_SIZE);
-      res.write(`event: digits\ndata: ${JSON.stringify({ block, offset, total: dec.length })}\n\n`);
-      offset += block.length;
-    }, BLOCK_DELAY_MS);
-
-    req.on('close', () => { clearInterval(iv); activeStreams.delete(ip); worker.terminate().catch(() => {}); });
-  });
-
-  worker.on('error', (err) => {
-    res.write(`event: error\ndata: ${JSON.stringify({ message: err.message })}\n\n`);
-    res.end(); activeStreams.delete(ip);
-  });
-});
-
-/* ── STANDARD digits ── */
-app.get('/digits', (req, res) => {
-  const n = Math.min(Math.max(parseInt(req.query.n, 10) || 100, 1), MAX_PRECISION);
-  const worker = new Worker(__filename, { workerData: { precision: n } });
-  worker.on('message', ({ digits }) => {
-    res.json({ digits, count: digits.length - 2, computed_at: new Date().toISOString() });
-    worker.terminate().catch(() => {});
-  });
-  worker.on('error', (err) => { res.status(500).json({ error: err.message }); worker.terminate().catch(() => {}); });
-});
-
-/* ── SAVE standard ── */
+/* ── Sauvegarde manuelle (toujours disponible) ── */
 app.post('/save', async (req, res) => {
   const { digits } = req.body;
   if (!digits || !digits.startsWith('3.')) {
@@ -340,20 +330,18 @@ app.get('/stats', async (req, res) => {
    ROUTES MODE CONTINU
    ════════════════════════════════════════════════════════════════════════════ */
 
-/* Démarrer le calcul continu */
+/* Démarrer le calcul continu (appelé auto au boot, mais route dispo) */
 app.post('/start-continuous', (req, res) => {
   if (continuousState.running) {
     return res.json({ started: false, reason: 'Déjà en cours', state: continuousState });
   }
   continuousState.running = true;
-  continuousState.digits = '3.';
-  continuousState.milestoneIdx = -1;
   continuousState.startTime = Date.now();
   runNextMilestone();
   res.json({ started: true, milestones: MILESTONES });
 });
 
-/* Arrêter le calcul continu */
+/* Arrêter — route gardée pour admin d urgence, mais le calcul redémarre auto */
 app.post('/stop-continuous', (req, res) => {
   continuousState.running = false;
   broadcast('stopped', { total_decimals: continuousState.digits.length - 2 });
@@ -382,7 +370,7 @@ app.get('/stream-continuous', (req, res) => {
 
   continuousState.clients.add(res);
 
-  // 1) État initial
+  // État initial
   res.write(`event: state\ndata: ${JSON.stringify({
     running: continuousState.running,
     total_decimals: continuousState.digits.length - 2,
@@ -391,7 +379,7 @@ app.get('/stream-continuous', (req, res) => {
     milestones: MILESTONES,
   })}\n\n`);
 
-  // 2) Catch-up : envoyer les décimales déjà calculées en blocs rapides
+  // Catch-up rapide des décimales déjà calculées
   const existing = continuousState.digits.slice(2);
   if (existing.length > 0) {
     const milestone = continuousState.milestoneIdx >= 0
@@ -400,10 +388,8 @@ app.get('/stream-continuous', (req, res) => {
     streamDecimalsToClients(existing, 0, existing.length, milestone, false);
   }
 
-  // 3) Nettoyage à la déconnexion
   req.on('close', () => {
     continuousState.clients.delete(res);
-    // Le calcul continue même si le client part
   });
 });
 
@@ -450,8 +436,17 @@ app.get('/complet', async (req, res) => {
   }
 });
 
-/* ── Démarrage ── */
-app.listen(PORT, () => {
+/* ── Démarrage + auto-start continu ── */
+app.listen(PORT, async () => {
   console.log(`π Explorer en ligne : http://localhost:${PORT}`);
-  console.log(`  Mode continu milestones : ${MILESTONES.join(', ')}`);
+  console.log(`  Milestones : ${MILESTONES.slice(0, 10).join(', ')}…`);
+
+  // Reprendre depuis le disque si pi_complet.txt existe
+  await loadContinuousStateFromDisk();
+
+  // Le calcul démarre automatiquement et ne s arrête jamais
+  continuousState.running = true;
+  continuousState.startTime = Date.now();
+  runNextMilestone();
+  console.log('▶️  Calcul continu auto-démarré — interruption impossible');
 });
