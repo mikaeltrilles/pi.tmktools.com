@@ -610,9 +610,7 @@ function connectContinuous() {
 
   es.addEventListener('digits', e => {
     const { block, offset, total, milestone } = JSON.parse(e.data);
-    appendBlock(block, offset);
-    // Accumule dans allDigits
-    allDigits += block;
+    appendBlock(block, offset);   // allDigits est déjà incrémenté à l'intérieur
     $('btnSave').disabled = false;
 
     const pct = Math.min(100, Math.round((offset + block.length) / total * 100));
