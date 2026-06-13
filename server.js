@@ -417,6 +417,73 @@ app.get('/digit', (req, res) => {
   res.json({ rank, digit: digits[idx], available: digits.length - 2 });
 });
 
+/* Recherche d'une chaîne de chiffres dans les snapshots et la mémoire */
+app.get('/search-chain', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q || q.length < 2 || q.length > 20 || !/^\d+$/.test(q)) {
+    return res.status(400).json({ error: 'Chaîne invalide (2–20 chiffres)' });
+  }
+
+  const positions = [];
+  const digits = continuousState.digits;
+  const totalMemory = digits.length - 2;
+
+  // 1. Chercher dans la mémoire live (continuousState.digits)
+  if (digits.length > 2) {
+    const decPart = digits.slice(2);
+    let idx = decPart.indexOf(q);
+    while (idx !== -1) {
+      positions.push(idx + 1); // rank 1-based
+      idx = decPart.indexOf(q, idx + 1);
+    }
+  }
+
+  // 2. Chercher dans les snapshots sur disque
+  try {
+    const files = await fs.promises.readdir(DATA_DIR);
+    const snapFiles = files
+      .filter(f => f.startsWith('pi_') && f.endsWith('.txt') && f !== 'pi_digits.txt' && f !== 'pi_complet.txt' && f !== 'pi_history.log')
+      .sort((a, b) => {
+        const na = parseInt(a.replace('pi_', '').replace('.txt', ''), 10);
+        const nb = parseInt(b.replace('pi_', '').replace('.txt', ''), 10);
+        return na - nb;
+      });
+
+    for (const f of snapFiles) {
+      const n = parseInt(f.replace('pi_', '').replace('.txt', ''), 10);
+      // Ne relire que si pas déjà couvert par la mémoire live
+      if (n <= totalMemory) continue;
+      try {
+        const content = await fs.promises.readFile(path.join(DATA_DIR, f), 'utf8');
+        const lines = content.split('\n');
+        let fileDigits = '';
+        for (const line of lines) {
+          const t = line.trim();
+          if (t && !t.startsWith('#')) { fileDigits = t; break; }
+        }
+        if (fileDigits.length > 2) {
+          const decPart = fileDigits.slice(2);
+          let idx = decPart.indexOf(q);
+          while (idx !== -1) {
+            positions.push(idx + 1);
+            idx = decPart.indexOf(q, idx + 1);
+          }
+        }
+      } catch { /* ignore unreadable snapshot */ }
+    }
+  } catch { /* ignore dir error */ }
+
+  // Dédoublonner et trier
+  const unique = [...new Set(positions)].sort((a, b) => a - b);
+
+  res.json({
+    query: q,
+    positions: unique,
+    total_checked: Math.max(totalMemory, 0),
+    count: unique.length,
+  });
+});
+
 /* ── Démarrage + auto-start continu ── */
 app.listen(PORT, async () => {
   console.log(`π Explorer en ligne : http://localhost:${PORT}`);
