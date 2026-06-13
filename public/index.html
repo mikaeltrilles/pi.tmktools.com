@@ -499,7 +499,7 @@ function appendBlock(block, offset) {
 }
 
 /* ── Reset / Resync ── */
-function reset() {
+function hardReset() {
   if (es) { es.close(); es = null; }
   clearInterval(timerInt);
   $('piStage').innerHTML = '';
@@ -507,17 +507,14 @@ function reset() {
   currentRow = null; currentRowStartRank = 1; rowCellCount = 0;
   $('chrono').textContent = '0.00 s';
   $('speed').textContent = '0 dec/s';
-  $('progressWrap').style.display = 'none';
   $('progressFill').style.width = '0%';
   $('progDigits').textContent = '0 / 0';
   $('progPct').textContent = '0 %';
   $('btnSave').disabled = true;
-  $('milestoneTrack').style.display = 'none';
   $('milestoneTrack').innerHTML = '';
   setStatus('idle');
   renderDist();
   $('rankOut').textContent = 'Entrez un rang pour afficher la décimale correspondante.';
-  // Reconnecte immédiatement au flux continu serveur
   connectContinuous();
 }
 
@@ -556,10 +553,14 @@ window.downloadSnapshot = async function(n) {
 };
 
 /* ════════════════════════════════════════════════════════════════════════════
-   CONNEXION SSE CONTINUE — Auto-démarrée, jamais arrêtable côté serveur
+   CONNEXION SSE CONTINUE — Persistante, auto-reconnexion, accumulation
    ════════════════════════════════════════════════════════════════════════════ */
+let reconnectDelay = 1000;
+let serverTotalDigits = 0;
+let isCatchUp = false;
+
 function connectContinuous() {
-  // Ne pas réinitialiser le compteur global — on fait un catch-up
+  if (es) { try { es.close(); } catch {} }
   $('progressWrap').style.display = 'block';
   setStatus('computing');
   startTimer();
@@ -570,12 +571,18 @@ function connectContinuous() {
     const st = JSON.parse(e.data);
     milestones = st.milestones || milestones;
     currentMilestoneIdx = st.current_milestone_idx;
+    serverTotalDigits = st.total_decimals || 0;
+    isCatchUp = count < serverTotalDigits;
     renderMilestones();
   });
 
   es.addEventListener('digits', e => {
     const { block, offset, total, milestone } = JSON.parse(e.data);
     appendBlock(block, offset);
+    // Accumule dans allDigits
+    allDigits += block;
+    $('btnSave').disabled = false;
+
     const pct = Math.min(100, Math.round((offset + block.length) / total * 100));
     $('progressFill').style.width = pct + '%';
     $('progDigits').textContent = fmt(offset + block.length) + ' / ' + fmt(total) + '  (milestone ' + fmt(milestone) + ')';
@@ -585,6 +592,7 @@ function connectContinuous() {
   es.addEventListener('milestone', e => {
     const { milestone, total_decimals } = JSON.parse(e.data);
     currentMilestoneIdx = milestones.indexOf(milestone);
+    serverTotalDigits = total_decimals;
     renderMilestones();
     loadSnapshots();
     toast(`Milestone ${fmt(milestone)} atteint — ${fmt(total_decimals)} décimales`, 'ok');
@@ -611,17 +619,28 @@ function connectContinuous() {
     toast(`Arrêté — ${fmt(total_decimals)} décimales calculées`, 'info');
   });
 
-  es.addEventListener('error', () => {
+  es.onerror = () => {
     setStatus('error');
     continuousRunning = false;
-    toast('Erreur de connexion au flux continu.', 'error');
-  });
+    es.close();
+    // Auto-reconnexion exponentielle backoff
+    toast(`Reconnexion dans ${Math.round(reconnectDelay/1000)}s…`, 'info');
+    setTimeout(() => {
+      reconnectDelay = Math.min(reconnectDelay * 1.5, 30000);
+      connectContinuous();
+    }, reconnectDelay);
+  };
+
+  es.onopen = () => {
+    reconnectDelay = 1000; // reset backoff
+    continuousRunning = true;
+  };
 
   continuousRunning = true;
 }
 
 /* ── Buttons ── */
-$('btnReset').addEventListener('click', reset);
+$('btnReset').addEventListener('click', hardReset);
 
 $('btnSave').addEventListener('click', async () => {
   try {
