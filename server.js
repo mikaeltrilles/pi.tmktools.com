@@ -56,9 +56,9 @@ const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'pi_digits.txt');
 const HISTORY_FILE = path.join(DATA_DIR, 'pi_history.log');
 const COMPLET_FILE = path.join(DATA_DIR, 'pi_complet.txt');
-const BLOCK_SIZE = 50;
-const BLOCK_DELAY_MS = 150;
-const CATCHUP_BLOCK = 500;
+const BLOCK_SIZE = 100;
+const BLOCK_DELAY_MS = 80;
+const CATCHUP_BLOCK = 1000;
 
 const MILESTONES = [
   100, 500, 1000, 5000, 10000,

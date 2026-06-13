@@ -148,25 +148,6 @@ input#customN:focus { border-color:var(--cyan); }
   letter-spacing:0.06em; text-transform:uppercase;
 }
 
-/* ── Milestone tracker ── */
-.milestone-track {
-  display:flex; flex-wrap:wrap; gap:0.4rem; margin-bottom:1rem;
-}
-.milestone-chip {
-  font-family:var(--font-mono); font-size:0.62rem; padding:0.25rem 0.5rem;
-  border-radius:0.3rem; background:var(--bg-panel); border:1px solid var(--border-subtle);
-  color:var(--text-faint); transition:.2s;
-}
-.milestone-chip.reached { color:var(--cyan); border-color:rgba(34,211,238,0.25); background:rgba(34,211,238,0.06); }
-.milestone-chip.current { color:var(--amber); border-color:var(--amber); background:rgba(251,191,36,0.08); animation:pulseAmber 2s infinite; }
-@keyframes pulseAmber { 0%,100%{box-shadow:0 0 0 rgba(251,191,36,0)} 50%{box-shadow:0 0 8px rgba(251,191,36,0.2)} }
-
-/* ── Progress ── */
-.progress-area { margin-bottom:1.25rem; }
-.progress-track { height:3px; background:var(--bg-panel); border-radius:2px; overflow:hidden; }
-.progress-fill { height:100%; width:0%; background:linear-gradient(90deg, var(--magenta), var(--cyan)); transition:width .25s ease; box-shadow:0 0 14px var(--cyan-dim); }
-.progress-meta { display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:0.65rem; color:var(--text-dim); margin-top:0.4rem; letter-spacing:0.04em; }
-
 /* ── Grille de décimales ── */
 .pi-stage {
   background:var(--bg-panel); border:1px solid var(--border-subtle); border-radius:0.6rem;
@@ -337,17 +318,6 @@ input#customN:focus { border-color:var(--cyan); }
   </div>
 </div>
 
-<!-- Milestones tracker -->
-<div class="milestone-track" id="milestoneTrack" style="display:none;"></div>
-
-<!-- ═════════════════════ PROGRESS ═════════════════════ -->
-<div class="progress-area" id="progressWrap" style="display:none;">
-  <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
-  <div class="progress-meta">
-    <span id="progDigits">0 / 0</span>
-    <span id="progPct">0 %</span>
-  </div>
-</div>
 
 <!-- ═════════════════════ LAYOUT GRILLE + SIDEBAR ═════════════════════ -->
 <div class="layout">
@@ -412,9 +382,6 @@ let dist = new Array(10).fill(0);
 let currentRow = null;
 let currentRowStartRank = 1;
 let rowCellCount = 0;
-let mode = 'standard'; // 'standard' | 'continuous'
-let milestones = [];
-let currentMilestoneIdx = -1;
 let continuousRunning = false;
 
 /* ── Stats client ── */
@@ -539,29 +506,13 @@ function hardReset() {
   currentRow = null; currentRowStartRank = 1; rowCellCount = 0;
   $('chrono').textContent = '0.00 s';
   $('speed').textContent = '0 dec/s';
-  $('progressFill').style.width = '0%';
-  $('progDigits').textContent = '0 / 0';
-  $('progPct').textContent = '0 %';
   $('liveCounter').textContent = '0';
   $('liveCounterWrap').style.display = 'none';
   $('btnSave').disabled = true;
-  $('milestoneTrack').innerHTML = '';
   setStatus('idle');
   renderDist();
   $('rankOut').textContent = 'Entrez un rang pour afficher la décimale correspondante.';
   connectContinuous();
-}
-
-/* ── Milestone chips ── */
-function renderMilestones() {
-  if (!milestones.length) return;
-  $('milestoneTrack').style.display = 'flex';
-  $('milestoneTrack').innerHTML = milestones.map((m, i) => {
-    let cls = 'milestone-chip';
-    if (i < currentMilestoneIdx) cls += ' reached';
-    else if (i === currentMilestoneIdx) cls += ' current';
-    return `<div class="${cls}" data-idx="${i}">${fmt(m)}</div>`;
-  }).join('');
 }
 
 /* ── Snapshots ── */
@@ -599,7 +550,6 @@ function updateLiveCounter(n) {
 
 function connectContinuous() {
   if (es) { try { es.close(); } catch {} }
-  $('progressWrap').style.display = 'block';
   setStatus('computing');
   startTimer();
   updateLiveCounter(0);
@@ -608,46 +558,28 @@ function connectContinuous() {
 
   es.addEventListener('state', e => {
     const st = JSON.parse(e.data);
-    milestones = st.milestones || milestones;
-    currentMilestoneIdx = st.current_milestone_idx;
     serverTotalDigits = st.total_decimals || 0;
     updateLiveCounter(serverTotalDigits);
-    renderMilestones();
   });
 
   es.addEventListener('digits', e => {
-    const { block, offset, total, milestone, milestoneStart } = JSON.parse(e.data);
+    const { block, offset } = JSON.parse(e.data);
     appendBlock(block, offset);
     $('btnSave').disabled = false;
-
     const currentTotal = offset + block.length;
     updateLiveCounter(currentTotal);
-
-    const msStart = milestoneStart || 0;
-    const msProgress = Math.max(0, currentTotal - msStart);
-    const msTarget = milestone - msStart;
-    const pct = msTarget > 0 ? Math.min(100, Math.round(msProgress / msTarget * 100)) : 100;
-    $('progressFill').style.width = pct + '%';
-    $('progDigits').textContent = fmt(currentTotal) + ' / ' + fmt(milestone) + '  (milestone ' + fmt(milestone) + ')';
-    $('progPct').textContent = pct + ' %';
   });
 
   es.addEventListener('milestone', e => {
-    const { milestone, total_decimals } = JSON.parse(e.data);
-    currentMilestoneIdx = milestones.indexOf(milestone);
+    const { total_decimals } = JSON.parse(e.data);
     serverTotalDigits = total_decimals;
-    renderMilestones();
     loadSnapshots();
-    toast(`Milestone ${fmt(milestone)} atteint — ${fmt(total_decimals)} décimales`, 'ok');
+    toast(`${fmt(total_decimals)} décimales atteintes`, 'ok');
   });
 
   es.addEventListener('status', e => {
-    const { milestone, current_decimals } = JSON.parse(e.data);
-    $('progressFill').style.width = '0%';
-    $('progressFill').classList.remove('indeterminate');
-    $('progDigits').textContent = `Calcul du milestone ${fmt(milestone)} en cours…  (${fmt(current_decimals)} décimales déjà atteintes)`;
-    $('progPct').textContent = '—';
-    toast(`Calcul du milestone ${fmt(milestone)}…`, 'info');
+    const { milestone } = JSON.parse(e.data);
+    toast(`Calcul du bloc ${fmt(milestone)}…`, 'info');
   });
 
   es.addEventListener('finished', e => {
@@ -655,7 +587,7 @@ function connectContinuous() {
     stopTimer(elapsed_ms);
     setStatus('done');
     continuousRunning = false;
-    toast(`Calcul continu terminé — ${fmt(total_decimals)} décimales`, 'ok');
+    toast(`${fmt(total_decimals)} décimales calculées`, 'ok');
   });
 
   es.addEventListener('stopped', e => {
@@ -663,7 +595,7 @@ function connectContinuous() {
     stopTimer(Date.now() - start);
     setStatus('idle');
     continuousRunning = false;
-    toast(`Arrêté — ${fmt(total_decimals)} décimales calculées`, 'info');
+    toast(`${fmt(total_decimals)} décimales calculées`, 'info');
   });
 
   es.onerror = () => {
