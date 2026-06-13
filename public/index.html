@@ -543,6 +543,23 @@ function nombreEnLettres(n) {
   const unit = ['','un','deux','trois','quatre','cinq','six','sept','huit','neuf'];
   const dizaine = ['','dix','vingt','trente','quarante','cinquante','soixante','soixante','quatre-vingt','quatre-vingt'];
   const teens = ['dix','onze','douze','treize','quatorze','quinze','seize','dix-sept','dix-huit','dix-neuf'];
+  // Groupes par milliers : [nom singulier, pluriel]
+  const groupes = [
+    ['',''],
+    ['mille','mille'],
+    ['million','millions'],
+    ['milliard','milliards'],
+    ['billion','billions'],
+    ['billiard','billiards'],
+    ['trillion','trillions'],
+    ['trilliard','trilliards'],
+    ['quadrillion','quadrillions'],
+    ['quadrilliard','quadrilliards'],
+    ['quintillion','quintillions'],
+    ['quintilliard','quintilliards'],
+    ['sextillion','sextillions'],
+    ['sextilliard','sextilliards'],
+  ];
 
   function conv(m) {
     if (m < 10) return unit[m];
@@ -564,19 +581,30 @@ function nombreEnLettres(n) {
       const centStr = c > 1 ? unit[c] + ' cent' : 'cent';
       return r > 0 ? centStr + ' ' + conv(r) : centStr + 's';
     }
-    if (m < 1000000) {
-      const mil = Math.floor(m / 1000), r = m % 1000;
-      const milStr = mil > 1 ? conv(mil) + ' mille' : 'mille';
-      return r > 0 ? milStr + ' ' + conv(r) : milStr;
+    // Découpage par groupes de 1000
+    const parts = [];
+    let reste = m;
+    while (reste > 0) {
+      parts.push(reste % 1000);
+      reste = Math.floor(reste / 1000);
     }
-    if (m < 1000000000) {
-      const mil = Math.floor(m / 1000000), r = m % 1000000;
-      const milStr = mil > 1 ? conv(mil) + ' millions' : 'un million';
-      return r > 0 ? milStr + ' ' + conv(r) : milStr;
+    let result = '';
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const val = parts[i];
+      if (val === 0) continue;
+      if (i === 0) {
+        result = result ? result + ' ' + conv(val) : conv(val);
+      } else if (i === 1) {
+        const milleStr = val > 1 ? conv(val) + ' mille' : 'mille';
+        result = result ? result + ' ' + milleStr : milleStr;
+      } else {
+        const [sg, pl] = groupes[i] || ['',''];
+        if (!sg) continue;
+        const grpStr = val > 1 ? conv(val) + ' ' + pl : 'un ' + sg;
+        result = result ? result + ' ' + grpStr : grpStr;
+      }
     }
-    const mil = Math.floor(m / 1000000000), r = m % 1000000000;
-    const milStr = mil > 1 ? conv(mil) + ' milliards' : 'un milliard';
-    return r > 0 ? milStr + ' ' + conv(r) : milStr;
+    return result || 'zéro';
   }
   return conv(n);
 }
