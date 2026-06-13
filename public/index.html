@@ -156,10 +156,10 @@ input#customN:focus { border-color:var(--cyan); }
 /* ── Grille de décimales ── */
 .pi-stage {
   background:var(--bg-panel); border:1px solid var(--border-subtle); border-radius:0.6rem;
-  padding:1.25rem; overflow-x:auto; min-height:160px;
+  padding:1.25rem; overflow-x:auto; overflow-y:auto; max-height:60vh; min-height:160px;
 }
 .pi-stage:empty::before {
-  content:"Choisissez un mode de calcul ci-dessus."; color:var(--text-faint);
+  content:"Connexion au calcul scientifique en cours… Les décimales apparaîtront ici en temps réel."; color:var(--text-faint);
   font-size:0.8rem; display:block; text-align:center; padding-top:3rem;
 }
 

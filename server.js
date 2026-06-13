@@ -379,9 +379,18 @@ app.get('/stream-continuous', (req, res) => {
     milestones: MILESTONES,
   })}\n\n`);
 
-  // On n'envoie plus l'intégralité de l'historique : le client reçoit
-  // uniquement les nouvelles décimales live à partir de maintenant.
-  // Le total est transmis via l'événement `state` ci-dessus.
+  // Catch-up limité aux 1 000 dernières décimales pour que la grille
+  // ne soit jamais vide au moment de la connexion, sans saturer le navigateur.
+  const existing = continuousState.digits.slice(2);
+  if (existing.length > 0) {
+    const TAIL = 1000;
+    const tail = existing.slice(-TAIL);
+    const milestone = continuousState.milestoneIdx >= 0
+      ? MILESTONES[continuousState.milestoneIdx]
+      : 0;
+    const offsetStart = existing.length - tail.length;
+    streamDecimalsToClients(tail, offsetStart, existing.length, milestone, false);
+  }
 
   req.on('close', () => {
     continuousState.clients.delete(res);
