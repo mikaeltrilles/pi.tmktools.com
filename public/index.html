@@ -398,6 +398,12 @@ let milestones = [];
 let currentMilestoneIdx = -1;
 let continuousRunning = false;
 
+/* ── Fenêtre d'affichage glissante (live window) ── */
+let totalClientDigits = 0;       // total reçu pour la vitesse
+const MAX_DISPLAY = 1000;        // nb max de décimales affichées dans le DOM
+let displayBuffer = [];          // [{rank, ch}] — buffer circulaire visuel
+let rebuildPending = false;
+
 /* ── Utilities ── */
 function setStatus(state) {
   const b = $('statusBadge');
@@ -426,14 +432,14 @@ function startTimer() {
   timerInt = setInterval(() => {
     const elapsed = Date.now() - start;
     $('chrono').textContent = fmtTime(elapsed);
-    const speed = elapsed > 0 ? (count / (elapsed/1000)).toFixed(0) : 0;
+    const speed = elapsed > 0 ? (totalClientDigits / (elapsed/1000)).toFixed(0) : 0;
     $('speed').textContent = speed + ' dec/s';
   }, 80);
 }
 function stopTimer(finalMs) {
   clearInterval(timerInt);
   $('chrono').textContent = fmtTime(finalMs);
-  const speed = finalMs > 0 ? (count / (finalMs/1000)).toFixed(0) : 0;
+  const speed = finalMs > 0 ? (totalClientDigits / (finalMs/1000)).toFixed(0) : 0;
   $('speed').textContent = speed + ' dec/s';
 }
 
@@ -452,48 +458,32 @@ function renderDist() {
   }).join('');
 }
 
-/* ── DOM helpers pour la grille structurée ── */
-function getOrCreateRow() {
-  if (!currentRow || rowCellCount >= 10) {
-    if (currentRowStartRank > 1 && (currentRowStartRank - 1) % 100 === 0) {
-      const sep = document.createElement('div');
-      sep.className = 'century-rule';
-      sep.innerHTML = '<div class="line"></div><div class="text">'+(currentRowStartRank-1)+'</div><div class="line"></div>';
-      $('piStage').appendChild(sep);
-    }
-    currentRow = document.createElement('div');
-    currentRow.className = 'pi-row';
-    const label = document.createElement('span');
-    label.className = 'row-label';
-    label.textContent = currentRowStartRank;
-    currentRow.appendChild(label);
-    $('piStage').appendChild(currentRow);
-    rowCellCount = 0;
-  }
-  return currentRow;
-}
-
-let distRafPending = false;
-function scheduleRenderDist() {
-  if (distRafPending) return;
-  distRafPending = true;
+/* ── Rebuild complet de la fenêtre glissante ── */
+function scheduleRebuild() {
+  if (rebuildPending) return;
+  rebuildPending = true;
   requestAnimationFrame(() => {
-    renderDist();
-    distRafPending = false;
+    rebuildDisplay();
+    rebuildPending = false;
   });
 }
 
-function appendBlock(block, offset) {
-  // Construction batched via DocumentFragment pour éviter les reflows intermédiaires
-  const frag = document.createDocumentFragment();
-  block.split('').forEach((ch, i) => {
-    const rank = offset + i + 1;
+function rebuildDisplay() {
+  const stage = $('piStage');
+  stage.innerHTML = '';
+  count = 0;
+  dist.fill(0);
+  currentRow = null;
+  currentRowStartRank = 1;
+  rowCellCount = 0;
+
+  displayBuffer.forEach(({rank, ch}) => {
     if (!currentRow || rowCellCount >= 10) {
       if (currentRowStartRank > 1 && (currentRowStartRank - 1) % 100 === 0) {
         const sep = document.createElement('div');
         sep.className = 'century-rule';
         sep.innerHTML = '<div class="line"></div><div class="text">'+(currentRowStartRank-1)+'</div><div class="line"></div>';
-        frag.appendChild(sep);
+        stage.appendChild(sep);
       }
       currentRow = document.createElement('div');
       currentRow.className = 'pi-row';
@@ -501,7 +491,7 @@ function appendBlock(block, offset) {
       label.className = 'row-label';
       label.textContent = currentRowStartRank;
       currentRow.appendChild(label);
-      frag.appendChild(currentRow);
+      stage.appendChild(currentRow);
       rowCellCount = 0;
     }
     const cell = document.createElement('span');
@@ -522,8 +512,23 @@ function appendBlock(block, offset) {
     rowCellCount++;
     if (rowCellCount >= 10) currentRowStartRank = rank + 1;
   });
-  $('piStage').appendChild(frag);
-  scheduleRenderDist();
+
+  renderDist();
+  // Auto-scroll vers le dernier chiffre
+  stage.scrollTop = stage.scrollHeight;
+}
+
+function appendBlock(block, offset) {
+  block.split('').forEach((ch, i) => {
+    const rank = offset + i + 1;
+    displayBuffer.push({rank, ch});
+    allDigits += ch;
+    totalClientDigits++;
+  });
+  if (displayBuffer.length > MAX_DISPLAY) {
+    displayBuffer = displayBuffer.slice(-MAX_DISPLAY);
+  }
+  scheduleRebuild();
 }
 
 /* ── Reset / Resync ── */
@@ -531,7 +536,8 @@ function hardReset() {
   if (es) { es.close(); es = null; }
   clearInterval(timerInt);
   $('piStage').innerHTML = '';
-  count = 0; dist.fill(0); allDigits = '3.';
+  count = 0; totalClientDigits = 0; displayBuffer = [];
+  dist.fill(0); allDigits = '3.';
   currentRow = null; currentRowStartRank = 1; rowCellCount = 0;
   $('chrono').textContent = '0.00 s';
   $('speed').textContent = '0 dec/s';
@@ -585,7 +591,6 @@ window.downloadSnapshot = async function(n) {
    ════════════════════════════════════════════════════════════════════════════ */
 let reconnectDelay = 1000;
 let serverTotalDigits = 0;
-let isCatchUp = false;
 
 function connectContinuous() {
   if (es) { try { es.close(); } catch {} }
@@ -600,7 +605,6 @@ function connectContinuous() {
     milestones = st.milestones || milestones;
     currentMilestoneIdx = st.current_milestone_idx;
     serverTotalDigits = st.total_decimals || 0;
-    isCatchUp = count < serverTotalDigits;
     renderMilestones();
   });
 
