@@ -419,16 +419,18 @@ function fmt(n) { return n.toLocaleString('fr-FR'); }
 function renderDist() {
   const total = Math.max(count, 1);
   const colors = ['#60a5fa','#34d399','#a78bfa','#f472b6','#fb923c','#facc15','#4ade80','#38bdf8','#e879f9','#f87171'];
-  $('distBox').innerHTML = dist.map((c, d) => {
-    const pctBar = total > 0 ? (c/total*100*10).toFixed(1) : 0; // x10 pour que 10% = barre pleine
-    const pctReal = total > 0 ? (c/total*100).toFixed(2) : '0.00';
-    return `
-      <div class="dist-row">
-        <span class="dist-label">${d}</span>
-        <div class="dist-track"><div class="dist-fill" style="width:${Math.min(100, pctBar)}%;background:${colors[d]}"></div></div>
-        <span class="dist-count">${pctReal}%</span>
-      </div>`;
-  }).join('');
+  const rows = dist.map((c, d) => {
+    const pctBar = total > 0 ? (c/total*100*10).toFixed(1) : 0;
+    const pctReal = total > 0 ? (c/total*100) : 0;
+    return { d, c, pctBar, pctReal };
+  });
+  rows.sort((a, b) => b.pctReal - a.pctReal);
+  $('distBox').innerHTML = rows.map(({d, c, pctBar, pctReal}) => `
+    <div class="dist-row">
+      <span class="dist-label">${d}</span>
+      <div class="dist-track"><div class="dist-fill" style="width:${Math.min(100, pctBar)}%;background:${colors[d]}"></div></div>
+      <span class="dist-count">${pctReal.toFixed(2)}%</span>
+    </div>`).join('');
 }
 
 let distRafPending = false;
