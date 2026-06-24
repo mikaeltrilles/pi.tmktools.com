@@ -254,13 +254,19 @@ input#customN:focus { border-color:var(--cyan); }
 .rank-out .search-pos:hover { color:var(--amber); text-decoration-color:var(--amber); }
 
 /* ── Toast ── */
+#toastBox {
+  position:fixed; bottom:1.25rem; right:1.25rem;
+  display:flex; flex-direction:column; gap:0.4rem;
+  z-index:999; pointer-events:none; align-items:flex-end;
+}
 .toast {
-  position:fixed; bottom:1.5rem; right:1.5rem; padding:0.6rem 1.1rem;
+  padding:0.55rem 1rem;
   border-radius:0.45rem; font-size:0.8rem; font-weight:500;
   background:var(--bg-panel); border:1px solid var(--border-subtle);
-  transform:translateY(12px); opacity:0; transition:all .25s ease; z-index:999; pointer-events:none;
+  transform:translateX(40px); opacity:0; transition:all .3s ease;
+  pointer-events:auto; max-width:22rem; word-break:break-word;
 }
-.toast.on { transform:translateY(0); opacity:1; }
+.toast.on { transform:translateX(0); opacity:1; }
 .toast-ok { border-color:var(--green); color:var(--green); background:rgba(74,222,128,0.08); }
 .toast-bad{ border-color:var(--red);  color:var(--red);  background:rgba(248,113,113,0.08); }
 .toast-info{ border-color:var(--cyan); color:var(--cyan); background:rgba(34,211,238,0.08); }
@@ -282,6 +288,7 @@ input#customN:focus { border-color:var(--cyan); }
 </head>
 
 <body>
+<div id="toastBox"></div>
 <div class="app">
 
 <!-- ═════════════════════ HEADER ═════════════════════ -->
@@ -378,7 +385,7 @@ input#customN:focus { border-color:var(--cyan); }
 </div>
 
 <footer class="footer">
-  PI Explorer — Algorithme : Machin (BigInt natif) · Node.js · Express · SSE · pi.tmktools.com
+  PI Explorer — Algorithme : Chudnovsky (BigInt natif) · Node.js · Express · SSE · pi.tmktools.com
 </footer>
 
 </div>
@@ -398,6 +405,9 @@ let currentRow = null;
 let currentRowStartRank = 1;
 let rowCellCount = 0;
 let continuousRunning = false;
+let liveCounterCurrent = 0;
+let liveCounterTarget = 0;
+let liveCounterTimer = null;
 
 /* ── Stats client ── */
 let totalClientDigits = 0;       // total reçu pour la vitesse
@@ -408,14 +418,25 @@ function setStatus(state) {
   b.className = 'badge ' + ({ computing:'on', done:'ok', error:'warn', idle:'' }[state] || '');
   $('statusText').textContent = { computing:'Calcul en cours…', done:'Terminé', error:'Erreur', idle:'Prêt' }[state] || 'Prêt';
 }
+let toastTimers = new Map();
 function toast(msg, type='info') {
+  const key = type + '|' + msg;
+  // Éviter les toasts identiques en cours
+  if (toastTimers.has(key)) {
+    clearTimeout(toastTimers.get(key));
+    toastTimers.delete(key);
+  }
   const t = document.createElement('div');
   const cls = type==='ok'?'toast-ok':type==='error'?'toast-bad':'toast-info';
   t.className = `toast ${cls}`;
   t.textContent = msg;
-  document.body.appendChild(t);
+  $('toastBox').appendChild(t);
   requestAnimationFrame(() => t.classList.add('on'));
-  setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 250); }, 3000);
+  const timer = setTimeout(() => {
+    t.classList.remove('on');
+    setTimeout(() => { t.remove(); toastTimers.delete(key); }, 300);
+  }, 3500);
+  toastTimers.set(key, timer);
 }
 function fmt(n) { return n.toLocaleString('fr-FR'); }
 
@@ -531,7 +552,9 @@ function appendBlock(block, offset) {
 
 /* ── Reset / Resync ── */
 function hardReset() {
-  if (es) { es.close(); es = null; }
+  intentionalClose = true;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (es) { try { es.close(); } catch {} es = null; }
   $('piStage').innerHTML = '';
   count = 0; totalClientDigits = 0;
   dist.fill(0); allDigits = '3.';
@@ -539,6 +562,9 @@ function hardReset() {
   $('progressFill').style.width = '0%';
   $('progDigits').textContent = '0 / 0';
   $('progPct').textContent = '0 %';
+  liveCounterCurrent = 0;
+  liveCounterTarget = 0;
+  if (liveCounterTimer) { clearInterval(liveCounterTimer); liveCounterTimer = null; }
   $('liveCounter').textContent = '0';
   $('liveCounterWords').textContent = '';
   $('liveCounterWrap').style.display = 'none';
@@ -546,6 +572,7 @@ function hardReset() {
   renderDist();
   $('rankOut').textContent = 'Entrez un rang pour afficher la décimale correspondante.';
   $('chainOut').textContent = 'Entrez une chaîne de chiffres (2–20).';
+  reconnectDelay = 2000;
   connectContinuous();
 }
 
@@ -558,9 +585,11 @@ async function loadSnapshots() {
       return;
     }
     $('snapshotList').innerHTML = snapshots.map(s => `
-      <div class="snapshot-row">
-        <span class="n">π_${fmt(s.n)}</span>
-        <span class="dl" onclick="downloadSnapshot(${s.n})">⬇</span>
+      <div class="snapshot-row" title="Snapshot π — ${s.n.toLocaleString('fr-FR')} décimales">
+        <span style="font-size:0.65rem;color:var(--text-faint);margin-right:0.2rem;">π</span>
+        <span class="n">${fmt(s.n)}</span>
+        <span style="font-size:0.6rem;color:var(--text-dim);margin-left:auto;padding-right:0.5rem;">décimales</span>
+        <span class="dl" onclick="downloadSnapshot(${s.n})" title="Télécharger">⬇</span>
       </div>`).join('');
   } catch { $('snapshotList').innerHTML = ''; }
 }
@@ -574,8 +603,10 @@ window.downloadSnapshot = async function(n) {
 /* ════════════════════════════════════════════════════════════════════════════
    CONNEXION SSE CONTINUE — Persistante, auto-reconnexion, accumulation
    ════════════════════════════════════════════════════════════════════════════ */
-let reconnectDelay = 1000;
+let reconnectDelay = 2000;
 let serverTotalDigits = 0;
+let reconnectTimer = null;
+let intentionalClose = false;
 
 function nombreEnLettres(n) {
   if (n === 0) return 'zéro';
@@ -648,26 +679,42 @@ function nombreEnLettres(n) {
   return conv(n);
 }
 
-function updateLiveCounter(n) {
+function updateLiveCounterDOM(n) {
   $('liveCounter').textContent = fmt(n);
   $('liveCounterWords').textContent = nombreEnLettres(n);
   $('liveCounterWrap').style.display = 'block';
 }
 
+function updateLiveCounter(n) {
+  // Mise à jour immédiate (état initial, reset, state SSE…)
+  liveCounterTarget = n;
+  liveCounterCurrent = n;
+  if (liveCounterTimer) { clearInterval(liveCounterTimer); liveCounterTimer = null; }
+  updateLiveCounterDOM(n);
+}
+
+function bumpLiveCounterTo(n) {
+  // Animation fluide décimale après décimale
+  liveCounterTarget = Math.max(liveCounterTarget, n);
+  if (liveCounterTimer) return; // animation déjà en cours, la cible a été relevée
+  liveCounterTimer = setInterval(() => {
+    if (liveCounterCurrent >= liveCounterTarget) {
+      clearInterval(liveCounterTimer);
+      liveCounterTimer = null;
+      return;
+    }
+    liveCounterCurrent++;
+    updateLiveCounterDOM(liveCounterCurrent);
+  }, 16); // ~60 fps
+}
+
 function connectContinuous() {
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   if (es) { try { es.close(); } catch {} }
   $('progressWrap').style.display = 'block';
   setStatus('computing');
-  updateLiveCounter(0);
 
   es = new EventSource('/stream-continuous');
-
-  es.addEventListener('state', e => {
-    const st = JSON.parse(e.data);
-    serverTotalDigits = st.total_decimals || 0;
-    updateLiveCounter(serverTotalDigits);
-    $('progressWrap').style.display = 'block';
-  });
 
   function visualGoal(n) {
     const goals = [100,500,1000,5000,10000,50000,100000,200000,500000,1000000];
@@ -677,12 +724,19 @@ function connectContinuous() {
     return g;
   }
 
+  es.addEventListener('state', e => {
+    const st = JSON.parse(e.data);
+    serverTotalDigits = st.total_decimals || 0;
+    updateLiveCounter(serverTotalDigits);
+    $('progressWrap').style.display = 'block';
+  });
+
   es.addEventListener('digits', e => {
     const { block, offset } = JSON.parse(e.data);
     appendBlock(block, offset);
 
     const currentTotal = offset + block.length; // position absolue serveur
-    updateLiveCounter(currentTotal);
+    bumpLiveCounterTo(currentTotal);
 
     const goal = visualGoal(currentTotal);
     const pct = goal > 0 ? Math.min(100, Math.round(currentTotal / goal * 100)) : 100;
@@ -705,7 +759,6 @@ function connectContinuous() {
     $('progressFill').style.width = pct + '%';
     $('progDigits').textContent = fmt(current_decimals) + ' / ' + fmt(goal);
     $('progPct').textContent = pct + ' %';
-    toast('Calcul continu en cours…', 'info');
   });
 
   es.addEventListener('finished', e => {
@@ -723,19 +776,28 @@ function connectContinuous() {
   });
 
   es.onerror = () => {
-    setStatus('error');
+    // Ne rien faire ici ; la vraie logique est dans onclose
+  };
+
+  es.onclose = () => {
+    if (intentionalClose) { intentionalClose = false; return; }
     continuousRunning = false;
-    es.close();
-    // Auto-reconnexion exponentielle backoff
-    toast(`Reconnexion dans ${Math.round(reconnectDelay/1000)}s…`, 'info');
-    setTimeout(() => {
-      reconnectDelay = Math.min(reconnectDelay * 1.5, 30000);
+    // Ne reconnecter que si la page est visible
+    if (document.hidden) {
+      document.addEventListener('visibilitychange', function vis() {
+        document.removeEventListener('visibilitychange', vis);
+        if (!document.hidden) connectContinuous();
+      }, { once: true });
+      return;
+    }
+    reconnectDelay = Math.min(reconnectDelay * 1.5, 30000);
+    reconnectTimer = setTimeout(() => {
       connectContinuous();
     }, reconnectDelay);
   };
 
   es.onopen = () => {
-    reconnectDelay = 1000; // reset backoff
+    reconnectDelay = 2000; // reset backoff
     continuousRunning = true;
   };
 

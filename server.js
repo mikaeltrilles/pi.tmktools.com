@@ -13,34 +13,77 @@ const { Worker, isMainThread, parentPort, workerData } = require('worker_threads
 const { EventEmitter } = require('events');
 
 /* ════════════════════════════════════════════════════════════════════════════
-   WORKER — Machin BigInt
+   WORKER — Chudnovsky BigInt
    ════════════════════════════════════════════════════════════════════════════ */
 if (!isMainThread) {
   const { precision } = workerData;
 
-  function arctanDiv(scale, n) {
-    const n2 = BigInt(n * n);
-    let sum = scale / BigInt(n);
-    let term = sum;
-    let i = 3n;
-    let sign = -1n;
-    while (true) {
-      term = term / n2;
-      const next = term / i;
-      if (next === 0n) break;
-      sum += sign * next;
-      sign = -sign;
-      i += 2n;
+  // Racine carrée entière par méthode de Newton
+  function sqrt(n) {
+    if (n < 0n) return 0n;
+    if (n < 2n) return n;
+    let x = n;
+    let y = (x + 1n) / 2n;
+    while (y < x) {
+      x = y;
+      y = (x + n / x) / 2n;
     }
-    return sum;
+    return x;
   }
 
   const extra = 10;
   const scale = 10n ** BigInt(precision + extra);
-  const atan5 = arctanDiv(scale, 5);
-  const atan239 = arctanDiv(scale, 239);
-  const pi = 4n * (4n * atan5 - atan239);
-  const s = pi.toString();
+
+  // Constantes Chudnovsky
+  const A = 13591409n;
+  const B = 545140134n;
+  const C = 640320n;
+  const C3 = C * C * C; // 640320^3
+
+  // sqrt(10005) à l'échelle `scale`
+  const sqrt10005 = sqrt(10005n * scale * scale);
+
+  // Calcul de S = Σ (-1)^k * (6k)! * (A + B*k) * scale / [(3k)! * (k!)^3 * C^(3k)]
+  let S = A * scale; // k = 0
+  let k = 1n;
+
+  // Seuil d'arrêt : terme < scale / 10^precision
+  const minTerm = scale / (10n ** BigInt(precision));
+
+  while (true) {
+    const k6 = k * 6n;
+    const k3 = k * 3n;
+
+    // Factorielles (k max ≈ precision/14, donc très petit)
+    let f6 = 1n;
+    for (let i = 2n; i <= k6; i++) f6 *= i;
+    let f3 = 1n;
+    for (let i = 2n; i <= k3; i++) f3 *= i;
+    let fk = 1n;
+    for (let i = 2n; i <= k; i++) fk *= i;
+
+    const L = A + B * k;
+    const num = f6 * L * scale;
+    const den = f3 * (fk ** 3n) * (C3 ** k);
+    const term = num / den;
+
+    if (k % 2n === 1n) {
+      S -= term; // (-1)^k pour k impair
+    } else {
+      S += term; // (-1)^k pour k pair
+    }
+
+    if (term < minTerm) break;
+    k++;
+  }
+
+  // π = (426880 * sqrt(10005)) / S
+  // piScaled ≈ π * scale
+  const piScaled = (426880n * sqrt10005 * scale) / S;
+  // Retirer les chiffres de garde
+  const piFinal = piScaled / (10n ** BigInt(extra));
+
+  const s = piFinal.toString();
   const result = '3.' + s.slice(1, precision + 1);
   parentPort.postMessage({ digits: result });
   return;
@@ -56,9 +99,9 @@ const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'pi_digits.txt');
 const HISTORY_FILE = path.join(DATA_DIR, 'pi_history.log');
 const COMPLET_FILE = path.join(DATA_DIR, 'pi_complet.txt');
-const BLOCK_SIZE = 100;
-const BLOCK_DELAY_MS = 80;
-const CATCHUP_BLOCK = 1000;
+const BLOCK_SIZE = 10;
+const BLOCK_DELAY_MS = 20;
+const CATCHUP_BLOCK = 100;
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -90,12 +133,18 @@ function snapshotPath(n) {
   return path.join(DATA_DIR, `pi_${n}.txt`);
 }
 
+/* Paliers intéressants : 100, 500, 1 000, 5 000, 10 000, 50 000, 100 000…
+   (tout nombre ≥ 100 qui commence par 1 ou 5 suivi uniquement de 0) */
+function isInterestingMilestone(n) {
+  return /^[15]0+$/.test(n.toString());
+}
+
 async function writeSnapshot(digits, n) {
   const header = [
-    `# Pi Snapshot — ${n} décimales`,
+    `# Pi Snapshot made with ♥ by PI Explorer`,
     `# Généré le : ${new Date().toISOString()}`,
     `# Nombre de décimales : ${digits.length - 2}`,
-    '# Algorithme : Machin (BigInt)',
+    '# Algorithme : Chudnovsky (BigInt)',
     '#',
     digits,
     ''
@@ -105,10 +154,10 @@ async function writeSnapshot(digits, n) {
 
 async function writeComplet(digits) {
   const header = [
-    '# Pi Complet — Accumulation continue',
+    '# Pi Complet made with ♥ by PI Explorer',
     `# Dernière mise à jour : ${new Date().toISOString()}`,
     `# Nombre total de décimales : ${digits.length - 2}`,
-    '# Algorithme : Machin (BigInt)',
+    '# Algorithme : Chudnovsky (BigInt)',
     '#',
     digits,
     ''
@@ -189,7 +238,7 @@ function streamDecimalsToClients(decimals, offsetStart, total, milestone, isLive
   sendNext();
 }
 
-const STEP = 1000; // calcul par pas de 1000 décimales pour un flux continu rapide
+const STEP = 100; // calcul par pas de 100 décimales pour un flux ultra-fluide
 
 /* ── Logique du calcul par pas (flux continu sans attente) ── */
 async function runNextMilestone() {
@@ -212,8 +261,8 @@ async function runNextMilestone() {
     // Streamer les nouvelles décimales aux clients immédiatement
     streamDecimalsToClients(newDec, prevLen, total, target, true, prevLen);
 
-    // Sauvegardes fichiers (snapshot tous les 10 000)
-    if (target % 10000 === 0) await writeSnapshot(digits, target);
+    // Snapshots aux paliers intéressants : 100, 500, 1000, 5000, 10000, 50000…
+    if (isInterestingMilestone(target)) await writeSnapshot(digits, target);
     await writeComplet(digits);
     await appendHistory(`${new Date().toISOString()} | +${STEP} → ${target} | ${total} décimales\n`);
 
@@ -253,10 +302,10 @@ app.post('/save', async (req, res) => {
   }
   try {
     const header = [
-      '# Pi Digits — pi.tmktools.com',
+      '# Pi Digits made with ♥ by PI Explorer',
       `# Généré le : ${new Date().toISOString()}`,
       `# Nombre de décimales : ${digits.length - 2}`,
-      '# Algorithme : Machin (BigInt)',
+      '# Algorithme : Chudnovsky (BigInt)',
       '#',
       digits, ''
     ].join('\n');
@@ -357,7 +406,18 @@ app.get('/stream-continuous', (req, res) => {
     streamDecimalsToClients(tail, offsetStart, total, total + STEP, false, offsetStart);
   }
 
+  // Heartbeat toutes les 30s pour garder la connexion SSE ouverte
+  const ping = setInterval(() => {
+    try {
+      res.write(':ping\n\n');
+    } catch {
+      clearInterval(ping);
+      continuousState.clients.delete(res);
+    }
+  }, 30000);
+
   req.on('close', () => {
+    clearInterval(ping);
     continuousState.clients.delete(res);
   });
 });
