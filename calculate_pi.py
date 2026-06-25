@@ -115,7 +115,10 @@ class ChudnovskyEngine:
     @classmethod
     def from_checkpoint(cls, path: Path):
         with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            content = f.read().strip()
+        if not content:
+            raise ValueError(f"Checkpoint vide : {path}")
+        data = json.loads(content)
         return cls(
             n=data["n"],
             P=data["P"],
@@ -587,8 +590,12 @@ def main():
             engine = ChudnovskyEngine.initial()
             log_message("🚀 Demarrage depuis zero")
         else:
-            engine = ChudnovskyEngine.from_checkpoint(CHECKPOINT_FILE)
-            log_message(f"🔄 Reprise du checkpoint : n={engine.n:,}, {engine.digits_done:,} decimales deja validees")
+            try:
+                engine = ChudnovskyEngine.from_checkpoint(CHECKPOINT_FILE)
+                log_message(f"🔄 Reprise du checkpoint : n={engine.n:,}, {engine.digits_done:,} decimales deja validees")
+            except Exception as e:
+                log_message(f"⚠️  Checkpoint invalide ou vide ({e}) — demarrage depuis zero")
+                engine = ChudnovskyEngine.initial()
 
         printer = ProgressPrinter()
 
