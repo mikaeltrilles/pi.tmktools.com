@@ -62,8 +62,12 @@ ALGORITHM = "Chudnovsky (BigInt)"
 # Destination distante pour l'upload automatique apres chaque palier
 REMOTE_USER = "vote1550"
 REMOTE_HOST = "109.234.165.174"
-REMOTE_PATH = "/home/vote1550/pi.tmktools.com/data/pi_complet.txt"
+REMOTE_DIR = "/home/vote1550/pi.tmktools.com/data"
+REMOTE_PATH = f"{REMOTE_DIR}/pi_complet.txt"
 REMOTE_SCP_TARGET = f"{REMOTE_USER}@{REMOTE_HOST}:{REMOTE_PATH}"
+REMOTE_CHECKPOINT_PATH = f"{REMOTE_DIR}/pi_checkpoint.json"
+REMOTE_CHECKPOINT_SCP_TARGET = f"{REMOTE_USER}@{REMOTE_HOST}:{REMOTE_CHECKPOINT_PATH}"
+REMOTE_CHECKPOINT_HISTORY = 10
 
 C = 426880
 K1 = 545140134
@@ -149,6 +153,8 @@ class ChudnovskyEngine:
             f.flush()
             os.fsync(f.fileno())
         tmp_path.replace(path)
+        # Upload du checkpoint vers le serveur de production
+        upload_remote_checkpoint(path)
 
     def estimate_digits(self) -> int:
         est = int(self.n * DIGITS_PER_TERM) - SAFETY_MARGIN
@@ -339,6 +345,66 @@ def deploy_to_production(src: Path) -> bool:
     return verify_remote_upload(expected_size)
 
 
+def upload_remote_checkpoint(src: Path) -> bool:
+    """
+    Upload le checkpoint vers le serveur de production.
+    Cree aussi une copie historisee (pi_checkpoint_YYYYMMDD_HHMMSS_digits.json)
+    et conserve seulement les REMOTE_CHECKPOINT_HISTORY derniers historiques.
+    """
+    try:
+        digits_done = 0
+        try:
+            data = json.loads(src.read_text(encoding="utf-8"))
+            digits_done = int(data.get("digits_done", 0))
+        except Exception:
+            pass
+
+        # Upload du checkpoint principal
+        result = subprocess.run(
+            ["scp", "-q", str(src), REMOTE_CHECKPOINT_SCP_TARGET],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            return False
+
+        # Creer une copie historisee sur le serveur
+        ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+        history_name = f"pi_checkpoint_{ts}_{digits_done}dec.json"
+        history_path = f"{REMOTE_DIR}/{history_name}"
+        copy_result = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", f"{REMOTE_USER}@{REMOTE_HOST}",
+             f"cp {REMOTE_CHECKPOINT_PATH} {history_path}"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        # Rotation : garder seulement les REMOTE_CHECKPOINT_HISTORY derniers
+        if copy_result.returncode == 0 and REMOTE_CHECKPOINT_HISTORY > 0:
+            rotate_result = subprocess.run(
+                ["ssh", "-o", "BatchMode=yes", f"{REMOTE_USER}@{REMOTE_HOST}",
+                 f"ls -t {REMOTE_DIR}/pi_checkpoint_*.json 2>/dev/null | tail -n +{REMOTE_CHECKPOINT_HISTORY + 1} | xargs -r rm -f"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            # On ignore silencieusement les erreurs de rotation
+            _ = rotate_result.returncode
+
+        return True
+    except Exception:
+        return False
+
+
+def download_remote_checkpoint(dst: Path) -> bool:
+    """
+    Telecharge le checkpoint principal du serveur de production.
+    """
+    return download_remote_file(REMOTE_CHECKPOINT_PATH, dst)
+
+
 def parse_digits_from_header(path: Path) -> Optional[int]:
     """
     Lit l'en-tete d'un fichier π et extrait le nombre de decimales.
@@ -496,6 +562,25 @@ def restore_checkpoint_from_snapshot(digits: int) -> ChudnovskyEngine:
     engine.digits_done = digits
     engine.save_checkpoint(CHECKPOINT_FILE)
     return engine
+
+
+def try_restore_from_remote_checkpoint() -> Optional[ChudnovskyEngine]:
+    """
+    Essaye de telecharger le checkpoint distant et de l'utiliser.
+    Retourne le moteur restaure, ou None si impossible.
+    """
+    try:
+        tmp_checkpoint = CHECKPOINT_FILE.with_suffix(".remote_checkpoint_tmp")
+        if download_remote_checkpoint(tmp_checkpoint):
+            engine = ChudnovskyEngine.from_checkpoint(tmp_checkpoint)
+            # Sauvegarder definitivement le checkpoint local
+            engine.save_checkpoint(CHECKPOINT_FILE)
+            tmp_checkpoint.unlink(missing_ok=True)
+            log_message(f"🔄 Checkpoint distant restaure : n={engine.n:,}, {engine.digits_done:,} decimales")
+            return engine
+    except Exception as e:
+        log_message(f"⚠️  Impossible de restaurer le checkpoint distant : {e}")
+    return None
 
 
 def make_backup(src: Path, digits_done: int) -> Optional[Path]:
@@ -753,41 +838,16 @@ def main():
             log_message("🗑️  Checkpoint supprime (reset demande)")
 
         if args.no_resume or not CHECKPOINT_FILE.exists():
-            # Si pas de checkpoint valide, chercher un snapshot de secours
-            # (distant ou local) pour eviter de recommencer a zero.
-            snapshot_path, snapshot_digits = find_best_snapshot()
-            if snapshot_path and snapshot_digits > 0:
-                log_message(f"📸 Snapshot de secours trouve : {snapshot_digits:,} decimales")
-                # Copier le snapshot comme fichier principal pour que le site
-                # affiche immediatement le maximum de decimales disponibles.
-                if snapshot_path != OUTPUT_FILE:
-                    shutil.copy2(snapshot_path, OUTPUT_FILE)
-                    log_message(f"📝 Fichier principal restaure depuis le snapshot")
-                # Nettoyer les fichiers temporaires distants
-                for tmp in Path(".").glob("*.remote_tmp_*"):
-                    try:
-                        tmp.unlink()
-                    except Exception:
-                        pass
-                # Reconstruire le checkpoint a partir de ce snapshot
-                engine = restore_checkpoint_from_snapshot(snapshot_digits)
-                log_message(f"🔄 Reprise depuis le snapshot : {snapshot_digits:,} decimales, n={engine.n:,}")
-            else:
-                engine = ChudnovskyEngine.initial()
-                log_message("🚀 Demarrage depuis zero")
-        else:
-            try:
-                engine = ChudnovskyEngine.from_checkpoint(CHECKPOINT_FILE)
-                log_message(f"🔄 Reprise du checkpoint : n={engine.n:,}, {engine.digits_done:,} decimales deja validees")
-            except Exception as e:
-                log_message(f"⚠️  Checkpoint invalide ou vide ({e}) — recherche d'un snapshot de secours")
+            # Si pas de checkpoint valide, essayer d'abord le checkpoint distant,
+            # puis chercher un snapshot .txt de secours.
+            engine = try_restore_from_remote_checkpoint()
+            if engine is None:
                 snapshot_path, snapshot_digits = find_best_snapshot()
                 if snapshot_path and snapshot_digits > 0:
                     log_message(f"📸 Snapshot de secours trouve : {snapshot_digits:,} decimales")
                     if snapshot_path != OUTPUT_FILE:
                         shutil.copy2(snapshot_path, OUTPUT_FILE)
                         log_message(f"📝 Fichier principal restaure depuis le snapshot")
-                    # Nettoyer les fichiers temporaires distants
                     for tmp in Path(".").glob("*.remote_tmp_*"):
                         try:
                             tmp.unlink()
@@ -796,8 +856,32 @@ def main():
                     engine = restore_checkpoint_from_snapshot(snapshot_digits)
                     log_message(f"🔄 Reprise depuis le snapshot : {snapshot_digits:,} decimales, n={engine.n:,}")
                 else:
-                    log_message("🚀 Aucun snapshot disponible — demarrage depuis zero")
                     engine = ChudnovskyEngine.initial()
+                    log_message("🚀 Demarrage depuis zero")
+        else:
+            try:
+                engine = ChudnovskyEngine.from_checkpoint(CHECKPOINT_FILE)
+                log_message(f"🔄 Reprise du checkpoint : n={engine.n:,}, {engine.digits_done:,} decimales deja validees")
+            except Exception as e:
+                log_message(f"⚠️  Checkpoint local invalide ou vide ({e}) — recherche d'un secours")
+                engine = try_restore_from_remote_checkpoint()
+                if engine is None:
+                    snapshot_path, snapshot_digits = find_best_snapshot()
+                    if snapshot_path and snapshot_digits > 0:
+                        log_message(f"📸 Snapshot de secours trouve : {snapshot_digits:,} decimales")
+                        if snapshot_path != OUTPUT_FILE:
+                            shutil.copy2(snapshot_path, OUTPUT_FILE)
+                            log_message(f"📝 Fichier principal restaure depuis le snapshot")
+                        for tmp in Path(".").glob("*.remote_tmp_*"):
+                            try:
+                                tmp.unlink()
+                            except Exception:
+                                pass
+                        engine = restore_checkpoint_from_snapshot(snapshot_digits)
+                        log_message(f"🔄 Reprise depuis le snapshot : {snapshot_digits:,} decimales, n={engine.n:,}")
+                    else:
+                        engine = ChudnovskyEngine.initial()
+                        log_message("🚀 Aucun snapshot disponible — demarrage depuis zero")
 
         printer = ProgressPrinter()
 
