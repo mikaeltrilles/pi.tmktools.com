@@ -137,9 +137,9 @@ input#customN:focus { border-color:var(--cyan); }
   font-family:var(--font-mono); font-size:2.4rem; font-weight:700;
   color:var(--cyan); line-height:1; letter-spacing:-0.02em;
   text-shadow:0 0 18px rgba(34,211,238,0.25);
-  transition: transform .08s ease;
 }
-.live-counter .n.tick { transform: scale(1.12); }
+/* tick désactivé pour éviter le mouvement excessif */
+.live-counter .n.tick { transform: none; }
 .live-counter .label {
   font-size:0.68rem; color:var(--text-faint); margin-top:0.25rem;
   letter-spacing:0.06em; text-transform:uppercase;
@@ -167,9 +167,12 @@ input#customN:focus { border-color:var(--cyan); }
 .pi-digit {
   font-family:var(--font-mono); font-size:0.95rem; font-weight:700;
   line-height:1.2; display:block; text-align:center;
-  animation: popIn .1s ease both;
+  transition: opacity .1s ease;
 }
-@keyframes popIn { from { opacity:0; transform:translateY(6px) scale(.8); } to { opacity:1; transform:translateY(0) scale(1); } }
+.pi-digit.new {
+  animation: popIn .18s ease both;
+}
+@keyframes popIn { from { opacity:0.6; transform:translateY(1px); } to { opacity:1; transform:translateY(0); } }
 
 .pi-digit.v0 { color:#60a5fa; text-shadow:0 0 6px rgba(96,165,250,0.3); }
 .pi-digit.v1 { color:#34d399; text-shadow:0 0 6px rgba(52,211,153,0.3); }
@@ -189,17 +192,11 @@ input#customN:focus { border-color:var(--cyan); }
 .pi-cell:hover .pi-rank { color:var(--cyan); }
 .pi-cell:hover .pi-digit { transform:scale(1.35); z-index:5; }
 
-/* Décimale "active" en cours d apparation */
+/* Décimale active : légère surbrillance, pas de scale */
 .pi-digit.latest {
-  transform: scale(1.6);
   z-index: 10;
-  filter: brightness(1.4) saturate(1.3);
-  animation: latestPulse .55s ease forwards;
-}
-@keyframes latestPulse {
-  0% { transform: scale(1.8); filter: brightness(2) saturate(1.6); }
-  40% { transform: scale(1.5); }
-  100% { transform: scale(1); filter: brightness(1) saturate(1); }
+  filter: brightness(1.2) saturate(1.1);
+  transition: filter .25s ease;
 }
 
 .century-rule { display:flex; align-items:center; gap:0.75rem; margin:0.6rem 0; opacity:.7; }
@@ -412,7 +409,7 @@ let liveCounterTimer = null;
 let digitQueue = [];
 let digitRenderTimer = null;
 let latestDigitEl = null;
-const DIGIT_RENDER_DELAY = 28; // ms entre deux décimales affichées
+const DIGIT_RENDER_DELAY = 45; // ms entre deux décimales affichées
 
 /* ── Stats client ── */
 let totalClientDigits = 0;       // total reçu pour la vitesse
@@ -510,28 +507,85 @@ function scheduleRenderDist() {
   });
 }
 
-function appendBlock(block, offset) {
-  // On ne rend pas le bloc d un coup : on le met en file d attente
-  // pour une apparition décimale après décimale synchronisée avec le compteur.
-  block.split('').forEach((ch, i) => {
-    digitQueue.push({ ch, rank: offset + i + 1 });
-  });
-  if (!digitRenderTimer) scheduleRenderNextDigit();
+let firstLoadComplete = false;
+
+function appendBlock(block, offset, totalFromServer = 0) {
+  // Lors du premier rattrapage : on injecte directement les centaines de décimales
+  // sans animation afin d'éviter le bougeoir initial, puis on repasse en mode live.
+  const isCatchUp = !firstLoadComplete && totalFromServer > count + block.length * 2;
+  if (isCatchUp && digitQueue.length === 0) {
+    appendBlockFast(block, offset, totalFromServer);
+  } else {
+    block.split('').forEach((ch, i) => {
+      digitQueue.push({ ch, rank: offset + i + 1 });
+    });
+    if (!digitRenderTimer) scheduleRenderNextDigit();
+  }
+}
+
+function appendBlockFast(block, offset, totalFromServer) {
+  for (let i = 0; i < block.length; i++) {
+    const ch = block[i];
+    const rank = offset + i + 1;
+    if (!currentRow || rowCellCount >= 10) {
+      if (currentRowStartRank > 1 && (currentRowStartRank - 1) % 100 === 0) {
+        const sep = document.createElement('div');
+        sep.className = 'century-rule';
+        sep.innerHTML = '<div class="line"></div><div class="text">'+(currentRowStartRank-1)+'</div><div class="line"></div>';
+        $('piStage').appendChild(sep);
+      }
+      currentRow = document.createElement('div');
+      currentRow.className = 'pi-row';
+      const label = document.createElement('span');
+      label.className = 'row-label';
+      label.textContent = currentRowStartRank;
+      currentRow.appendChild(label);
+      $('piStage').appendChild(currentRow);
+      rowCellCount = 0;
+    }
+    const cell = document.createElement('span');
+    cell.className = 'pi-cell';
+    const digit = document.createElement('span');
+    digit.className = 'pi-digit v' + ch;
+    digit.textContent = ch;
+    digit.dataset.rank = rank;
+    digit.dataset.val = ch;
+    const rk = document.createElement('span');
+    rk.className = 'pi-rank';
+    rk.textContent = rank;
+    cell.appendChild(digit);
+    cell.appendChild(rk);
+    currentRow.appendChild(cell);
+
+    dist[parseInt(ch)]++;
+    count++;
+    totalClientDigits++;
+    rowCellCount++;
+    if (rowCellCount >= 10) currentRowStartRank = rank + 1;
+    liveCounterCurrent = rank;
+    liveCounterTarget = Math.max(liveCounterTarget, rank);
+  }
+  // Marquer la dernière décimale du bloc sans animation violente
+  const cells = currentRow ? currentRow.querySelectorAll('.pi-digit') : [];
+  if (cells.length) {
+    if (latestDigitEl) latestDigitEl.classList.remove('latest');
+    latestDigitEl = cells[cells.length - 1];
+    latestDigitEl.classList.add('latest');
+  }
+  updateLiveCounterDOM(liveCounterCurrent);
+  scheduleRenderDist();
+  if (liveCounterCurrent >= totalFromServer - 1) firstLoadComplete = true;
 }
 
 function scheduleRenderNextDigit() {
   if (digitQueue.length === 0) {
     digitRenderTimer = null;
+    firstLoadComplete = true;
     return;
   }
   digitRenderTimer = setTimeout(() => {
-    // Rendre jusqu'à 3 décimales par frame si la file est longue,
-    // pour rester sous la seconde tout en gardant l'effet une par une.
-    const batch = Math.min(3, Math.max(1, Math.floor(digitQueue.length / 20)));
-    for (let k = 0; k < batch; k++) {
-      if (digitQueue.length === 0) break;
-      renderNextDigit();
-    }
+    // Une seule décimale par frame en mode live : calme et lisible
+    renderNextDigit();
     scheduleRenderNextDigit();
   }, DIGIT_RENDER_DELAY);
 }
@@ -561,8 +615,9 @@ function renderNextDigit() {
   const cell = document.createElement('span');
   cell.className = 'pi-cell';
   const digit = document.createElement('span');
-  digit.className = 'pi-digit v' + ch;
+  digit.className = 'pi-digit new v' + ch;
   digit.textContent = ch;
+  setTimeout(() => digit.classList.remove('new'), 200);
   digit.dataset.rank = rank;
   digit.dataset.val = ch;
   const rk = document.createElement('span');
@@ -572,12 +627,11 @@ function renderNextDigit() {
   cell.appendChild(rk);
   currentRow.appendChild(cell);
 
-  // Effet "dernière décimale"
+  // Effet "dernière décimale" subtil
   if (latestDigitEl) latestDigitEl.classList.remove('latest');
   latestDigitEl = digit;
   requestAnimationFrame(() => digit.classList.add('latest'));
 
-  // Stats et compteur synchronisé
   dist[parseInt(ch)]++;
   count++;
   totalClientDigits++;
@@ -587,14 +641,7 @@ function renderNextDigit() {
   liveCounterCurrent = rank;
   liveCounterTarget = Math.max(liveCounterTarget, rank);
   updateLiveCounterDOM(rank);
-
   scheduleRenderDist();
-
-  // Auto-scroll : seulement toutes les 10 décimales (= 1 ligne) pour ne pas ralentir
-  if (rowCellCount === 10) {
-    const stage = $('piStage');
-    stage.scrollTop = stage.scrollHeight;
-  }
 }
 
 /* ── Reset / Resync ── */
@@ -611,6 +658,7 @@ function hardReset() {
   digitQueue = []; latestDigitEl = null;
   liveCounterCurrent = 0;
   liveCounterTarget = 0;
+  firstLoadComplete = false;
   $('liveCounter').textContent = '0';
   $('liveCounterWords').textContent = '';
   $('liveCounterWrap').style.display = 'none';
@@ -731,11 +779,7 @@ function updateLiveCounterDOM(n) {
   el.textContent = fmt(n);
   $('liveCounterWords').textContent = nombreEnLettres(n);
   $('liveCounterWrap').style.display = 'block';
-  // Petit effet "tick" sur le compteur à chaque incrément
-  el.classList.remove('tick');
-  void el.offsetWidth; // force reflow
-  el.classList.add('tick');
-  setTimeout(() => el.classList.remove('tick'), 90);
+  // Tick désactivé : le compteur reste stable
 }
 
 function updateLiveCounter(n) {
@@ -766,17 +810,31 @@ function connectFileStream() {
   if (es) { try { es.close(); } catch {} }
   setStatus('live');
 
+  // Charger l'état initial de façon stable (compteur + écriture en lettres)
+  fetch('/continuous-state')
+    .then(r => r.json())
+    .then(st => {
+      serverTotalDigits = st.total_decimals || 0;
+      liveCounterCurrent = serverTotalDigits;
+      liveCounterTarget = serverTotalDigits;
+      updateLiveCounterDOM(serverTotalDigits);
+    })
+    .catch(() => {});
+
   es = new EventSource('/stream-continuous');
 
   es.addEventListener('state', e => {
     const st = JSON.parse(e.data);
     serverTotalDigits = st.total_decimals || 0;
-    updateLiveCounter(serverTotalDigits);
+    // Mise à jour immédiate du compteur sans animation
+    liveCounterCurrent = serverTotalDigits;
+    liveCounterTarget = serverTotalDigits;
+    updateLiveCounterDOM(serverTotalDigits);
   });
 
   es.addEventListener('digits', e => {
-    const { block, offset } = JSON.parse(e.data);
-    appendBlock(block, offset);
+    const { block, offset, total } = JSON.parse(e.data);
+    appendBlock(block, offset, total);
   });
 
   es.addEventListener('milestone', e => {
@@ -817,7 +875,8 @@ function connectFileStream() {
   es.onopen = () => {
     reconnectDelay = 2000;
     fileStreamConnected = true;
-    setStatus('live');
+    // Le statut reste stable : pas de clignotement live au fil des chiffres
+    setStatus('connected');
   };
 
   fileStreamConnected = true;
