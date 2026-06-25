@@ -978,6 +978,21 @@ function connectFileStream() {
   };
 
   fileStreamConnected = true;
+
+  // Polling de secours toutes les 3 s au cas où l'EventSource serait bloqué
+  if (window._statePoll) clearInterval(window._statePoll);
+  window._statePoll = setInterval(() => {
+    fetch('/continuous-state')
+      .then(r => r.json())
+      .then(st => {
+        serverTotalDigits = st.total_decimals || 0;
+        if (st.distribution && Array.isArray(st.distribution) && st.distribution.length === 10) {
+          serverDistribution = st.distribution;
+        }
+        renderDist();
+      })
+      .catch(() => {});
+  }, 3000);
 }
 
 /* ── Buttons ── */
