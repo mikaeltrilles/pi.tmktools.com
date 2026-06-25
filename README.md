@@ -404,6 +404,52 @@ kill "$(cat pi_calculate.pid)"
 ./run_background.sh --reset
 ```
 
+## 📖 Interprétation des logs d'un palier
+
+Chaque palier produit un bloc de logs similaire à celui-ci :
+
+```text
+📦 PALIER #2 — Cible : 162538 decimales
+[2026-06-25 13:24:26 CEST] 🔢 Ajout de 13 termes Chudnovsky...
+[2026-06-25 13:24:26 CEST] 🚀   162488 decimales atteintes (n=11458)
+[2026-06-25 13:24:26 CEST] 🧮 Evaluation de π a 162672 decimales...
+[2026-06-25 13:24:39 CEST] 📝 Ecriture de pi_complet.txt (162672 decimales)
+[2026-06-25 13:24:39 CEST] 💾 Sauvegarde du checkpoint : pi_checkpoint.json
+[2026-06-25 13:24:40 CEST] 💾 Backup local cree : pi_complet_backup_162672dec_20260625_112440.txt
+[2026-06-25 13:24:40 CEST] 🗑️  Backup supprime (rotation) : pi_complet_backup_162119dec_20260625_111406.txt
+[2026-06-25 13:24:40 CEST] ☁️  Envoi vers le serveur de production : vote1550@109.234.165.174:/home/vote1550/pi.tmktools.com/data/pi_complet.txt
+[2026-06-25 13:24:41 CEST] ✅ Upload production reussi : vote1550@109.234.165.174:/home/vote1550/pi.tmktools.com/data/pi_complet.txt
+[2026-06-25 13:24:42 CEST] 🔍 Verification production OK : 162850 octets
+[2026-06-25 13:24:42 CEST] ✅ Backup + upload production termines pour 162672 decimales
+[2026-06-25 13:24:42 CEST] 🎯 Palier #2 termine : 162672 decimales de π calculees
+[2026-06-25 13:24:42 CEST] 🔮 Apercu : 3.14159265358979323846264338327950288419716939937510...
+```
+
+| Ligne | Signification |
+|---|---|
+| `📦 PALIER #2 — Cible : 162538 decimales` | Le programme travaille par paliers de ~1000 décimales. Après le palier #1, il avait environ 161 119 décimales validées. La cible du palier #2 est donc `161 119 + 1000 ≈ 162 538`. |
+| `🔢 Ajout de 13 termes Chudnovsky...` | Le moteur ajoute 13 nouveaux termes à la somme infinie de Chudnovsky. Chaque terme apporte environ **14,18 décimales**, donc 13 termes suffisent pour dépasser la cible. |
+| `🚀   162488 decimales atteintes (n=11458)` | Après ces 13 termes, le moteur estime qu'il a **162 488 décimales sûres**, avec un total de `n = 11 458` termes de la série sommés. C'est une estimation intermédiaire, pas le nombre final. |
+| `🧮 Evaluation de π a 162672 decimales...` | Le programme convertit le résultat du calcul en une chaîne de chiffres. Il calcule avec une petite marge de sécurité, d'où `162 672` au lieu de `162 488` exactement. |
+| `📝 Ecriture de pi_complet.txt (162672 decimales)` | Le fichier local `pi_complet.txt` est réécrit avec le nouvel en-tête et les 162 672 décimales. |
+| `💾 Sauvegarde du checkpoint : pi_checkpoint.json` | L'état du moteur (`n`, `P`, `M`, `L`, `digits_done`) est sauvegardé pour permettre une reprise immédiate après une coupure. |
+| `💾 Backup local cree : pi_complet_backup_162672dec_20260625_112440.txt` | Une copie datée est créée dans `/home/mika/Documents/`. Son nom contient le nombre de décimales et la date/heure au format UTC. |
+| `🗑️  Backup supprime (rotation) : pi_complet_backup_162119dec_20260625_111406.txt` | Rotation automatique : seuls les 3 derniers backups sont conservés. L'ancien est supprimé. |
+| `☁️  Envoi vers le serveur de production : ...` | Le fichier `pi_complet.txt` local est envoyé par SCP vers le serveur o2switch. |
+| `✅ Upload production reussi : ...` | Le fichier a bien été déposé sur le serveur distant. |
+| `🔍 Verification production OK : 162850 octets` | Le programme se reconnecte en SSH au serveur pour vérifier la taille du fichier distant : **162 850 octets**, ce qui correspond au fichier local. |
+| `✅ Backup + upload production termines pour 162672 decimales` | Toutes les opérations de sauvegarde (locale + distante) sont terminées avec succès. |
+| `🎯 Palier #2 termine : 162672 decimales de π calculees` | Bilan du palier : 162 672 décimales de π sont maintenant écrites, sauvegardées et uploadées. |
+| `🔮 Apercu : 3.14159265358979323846264338327950288419716939937510...` | Affichage des 52 premiers chiffres de π pour confirmation visuelle rapide. |
+
+### Pourquoi la cible n'est pas exactement un multiple de 1000 ?
+
+La cible théorique est `digits_done + 1000`. En pratique, le moteur ajoute un nombre entier de termes Chudnovsky. Comme chaque terme apporte environ 14,18 décimales, le résultat final dépasse légèrement la cible. Le nombre réel de décimales écrites est donc un peu supérieur au palier de 1000 demandé.
+
+### Pourquoi `n` augmente si peu entre deux paliers ?
+
+Plus le calcul avance, plus chaque terme de Chudnovsky est précieux. Avec `n = 11 458`, 13 nouveaux termes suffisent pour gagner ~1000 décimales. Au début du calcul, il fallait plusieurs dizaines de termes pour atteindre le même gain.
+
 ## 🧮 Architecture technique
 
 Le programme utilise une version **incrémentale** de la formule de Chudnovsky :
