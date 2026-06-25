@@ -398,7 +398,9 @@ input#customN:focus { border-color:var(--cyan); }
     <!-- Distribution -->
     <div class="panel">
       <h3><span class="icon">📊</span> Distribution 0–9</h3>
-      <div id="distBox"></div>
+      <div id="distBox">
+        <div style="color:var(--text-faint);font-size:0.75rem;text-align:center;padding:1rem 0;">Chargement des statistiques…</div>
+      </div>
     </div>
 
     <!-- Snapshots -->
@@ -526,6 +528,16 @@ let serverDistribution = new Array(10).fill(0);
 function renderDist() {
   const total = Math.max(serverTotalDigits, 1);
   const colors = ['#60a5fa','#34d399','#a78bfa','#f472b6','#fb923c','#facc15','#4ade80','#38bdf8','#e879f9','#f87171'];
+
+  // Si on n'a pas encore reçu de distribution, garder le message de chargement
+  if (serverTotalDigits === 0 || serverDistribution.every(c => c === 0)) {
+    $('distBox').innerHTML = `
+      <div style="color:var(--text-faint);font-size:0.75rem;text-align:center;padding:1rem 0;">
+        En attente du fichier π…
+      </div>`;
+    return;
+  }
+
   const rows = serverDistribution.map((c, d) => {
     const pctReal = total > 0 ? (c / total * 100) : 0;
     return { d, c, pctReal };
@@ -903,6 +915,8 @@ function connectFileStream() {
     liveCounterCurrent = serverTotalDigits;
     liveCounterTarget = serverTotalDigits;
     updateLiveCounterDOM(serverTotalDigits);
+    // Si on arrive avant que fetch /continuous-state ait fini, forcer le rendu immédiat
+    renderDist();
   });
 
   es.addEventListener('digits', e => {
