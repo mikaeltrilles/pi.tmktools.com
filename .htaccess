@@ -1,0 +1,23 @@
+# Désactiver le cache
+<IfModule mod_expires.c>
+ExpiresActive Off
+</IfModule>
+
+<IfModule mod_headers.c>
+Header set Cache-Control "no-cache, no-store, must-revalidate, max-age=0"
+Header set Pragma "no-cache"
+Header set Expires "0"
+</IfModule>
+
+Options -MultiViews -Indexes
+DirectoryIndex disabled
+
+RewriteEngine On
+RewriteBase /
+
+# Forcer le proxy de la racine vers Node.js (évite que Apache serve index.html statique)
+RewriteRule ^$ http://127.0.0.1:3001/ [P,L]
+
+# Proxy ABSOLUMENT TOUT vers Node.js sur le port 3001
+# (Node sert lui-même les assets statiques)
+RewriteRule ^(.*)$ http://127.0.0.1:3001/$1 [P,L]
