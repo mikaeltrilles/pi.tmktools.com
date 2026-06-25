@@ -137,7 +137,9 @@ input#customN:focus { border-color:var(--cyan); }
   font-family:var(--font-mono); font-size:2.4rem; font-weight:700;
   color:var(--cyan); line-height:1; letter-spacing:-0.02em;
   text-shadow:0 0 18px rgba(34,211,238,0.25);
+  transition: transform .08s ease;
 }
+.live-counter .n.tick { transform: scale(1.12); }
 .live-counter .label {
   font-size:0.68rem; color:var(--text-faint); margin-top:0.25rem;
   letter-spacing:0.06em; text-transform:uppercase;
@@ -186,6 +188,19 @@ input#customN:focus { border-color:var(--cyan); }
 }
 .pi-cell:hover .pi-rank { color:var(--cyan); }
 .pi-cell:hover .pi-digit { transform:scale(1.35); z-index:5; }
+
+/* Décimale "active" en cours d apparation */
+.pi-digit.latest {
+  transform: scale(1.6);
+  z-index: 10;
+  filter: brightness(1.4) saturate(1.3);
+  animation: latestPulse .55s ease forwards;
+}
+@keyframes latestPulse {
+  0% { transform: scale(1.8); filter: brightness(2) saturate(1.6); }
+  40% { transform: scale(1.5); }
+  100% { transform: scale(1); filter: brightness(1) saturate(1); }
+}
 
 .century-rule { display:flex; align-items:center; gap:0.75rem; margin:0.6rem 0; opacity:.7; }
 .century-rule .line { flex:1; height:1px; background:linear-gradient(90deg, transparent, var(--cyan-dim), transparent); }
@@ -409,6 +424,12 @@ let liveCounterCurrent = 0;
 let liveCounterTarget = 0;
 let liveCounterTimer = null;
 
+/* ── Animation décimale par décimale ── */
+let digitQueue = [];
+let digitRenderTimer = null;
+let latestDigitEl = null;
+const DIGIT_RENDER_DELAY = 45; // ms entre deux décimales affichées
+
 /* ── Stats client ── */
 let totalClientDigits = 0;       // total reçu pour la vitesse
 
@@ -506,65 +527,105 @@ function scheduleRenderDist() {
 }
 
 function appendBlock(block, offset) {
-  const frag = document.createDocumentFragment();
+  // On ne rend pas le bloc d un coup : on le met en file d attente
+  // pour une apparition décimale après décimale synchronisée avec le compteur.
   block.split('').forEach((ch, i) => {
-    const rank = offset + i + 1;
-    if (!currentRow || rowCellCount >= 10) {
-      if (currentRowStartRank > 1 && (currentRowStartRank - 1) % 100 === 0) {
-        const sep = document.createElement('div');
-        sep.className = 'century-rule';
-        sep.innerHTML = '<div class="line"></div><div class="text">'+(currentRowStartRank-1)+'</div><div class="line"></div>';
-        frag.appendChild(sep);
-      }
-      currentRow = document.createElement('div');
-      currentRow.className = 'pi-row';
-      const label = document.createElement('span');
-      label.className = 'row-label';
-      label.textContent = currentRowStartRank;
-      currentRow.appendChild(label);
-      frag.appendChild(currentRow);
-      rowCellCount = 0;
-    }
-    const cell = document.createElement('span');
-    cell.className = 'pi-cell';
-    const digit = document.createElement('span');
-    digit.className = 'pi-digit v' + ch;
-    digit.textContent = ch;
-    digit.dataset.rank = rank;
-    digit.dataset.val = ch;
-    const rk = document.createElement('span');
-    rk.className = 'pi-rank';
-    rk.textContent = rank;
-    cell.appendChild(digit);
-    cell.appendChild(rk);
-    currentRow.appendChild(cell);
-    dist[parseInt(ch)]++;
-    count++;
-    totalClientDigits++;
-    rowCellCount++;
-    if (rowCellCount >= 10) currentRowStartRank = rank + 1;
+    digitQueue.push({ ch, rank: offset + i + 1 });
   });
-  const stage = $('piStage');
-  stage.appendChild(frag);
+  if (!digitRenderTimer) scheduleRenderNextDigit();
+}
+
+function scheduleRenderNextDigit() {
+  if (digitQueue.length === 0) {
+    digitRenderTimer = null;
+    return;
+  }
+  digitRenderTimer = setTimeout(() => {
+    renderNextDigit();
+    scheduleRenderNextDigit();
+  }, DIGIT_RENDER_DELAY);
+}
+
+function renderNextDigit() {
+  if (digitQueue.length === 0) return;
+  const { ch, rank } = digitQueue.shift();
+
+  // Créer une nouvelle ligne si nécessaire
+  if (!currentRow || rowCellCount >= 10) {
+    if (currentRowStartRank > 1 && (currentRowStartRank - 1) % 100 === 0) {
+      const sep = document.createElement('div');
+      sep.className = 'century-rule';
+      sep.innerHTML = '<div class="line"></div><div class="text">'+(currentRowStartRank-1)+'</div><div class="line"></div>';
+      $('piStage').appendChild(sep);
+    }
+    currentRow = document.createElement('div');
+    currentRow.className = 'pi-row';
+    const label = document.createElement('span');
+    label.className = 'row-label';
+    label.textContent = currentRowStartRank;
+    currentRow.appendChild(label);
+    $('piStage').appendChild(currentRow);
+    rowCellCount = 0;
+  }
+
+  const cell = document.createElement('span');
+  cell.className = 'pi-cell';
+  const digit = document.createElement('span');
+  digit.className = 'pi-digit v' + ch;
+  digit.textContent = ch;
+  digit.dataset.rank = rank;
+  digit.dataset.val = ch;
+  const rk = document.createElement('span');
+  rk.className = 'pi-rank';
+  rk.textContent = rank;
+  cell.appendChild(digit);
+  cell.appendChild(rk);
+  currentRow.appendChild(cell);
+
+  // Effet "dernière décimale"
+  if (latestDigitEl) latestDigitEl.classList.remove('latest');
+  latestDigitEl = digit;
+  requestAnimationFrame(() => digit.classList.add('latest'));
+
+  // Stats et compteur synchronisé
+  dist[parseInt(ch)]++;
+  count++;
+  totalClientDigits++;
+  rowCellCount++;
+  if (rowCellCount >= 10) currentRowStartRank = rank + 1;
+
+  liveCounterCurrent = rank;
+  liveCounterTarget = Math.max(liveCounterTarget, rank);
+  updateLiveCounterDOM(rank);
+
   scheduleRenderDist();
-  stage.scrollTop = stage.scrollHeight;
+
+  // Auto-scroll fluide vers la dernière décimale
+  const stage = $('piStage');
+  const cellRect = cell.getBoundingClientRect();
+  const stageRect = stage.getBoundingClientRect();
+  if (cellRect.bottom > stageRect.bottom - 20 || cellRect.top < stageRect.top + 20) {
+    cell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
 }
 
 /* ── Reset / Resync ── */
 function hardReset() {
   intentionalClose = true;
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (digitRenderTimer) { clearTimeout(digitRenderTimer); digitRenderTimer = null; }
+  if (liveCounterTimer) { clearInterval(liveCounterTimer); liveCounterTimer = null; }
   if (es) { try { es.close(); } catch {} es = null; }
   $('piStage').innerHTML = '';
   count = 0; totalClientDigits = 0;
   dist.fill(0); allDigits = '3.';
   currentRow = null; currentRowStartRank = 1; rowCellCount = 0;
+  digitQueue = []; latestDigitEl = null;
   $('progressFill').style.width = '0%';
   $('progDigits').textContent = '0 / 0';
   $('progPct').textContent = '0 %';
   liveCounterCurrent = 0;
   liveCounterTarget = 0;
-  if (liveCounterTimer) { clearInterval(liveCounterTimer); liveCounterTimer = null; }
   $('liveCounter').textContent = '0';
   $('liveCounterWords').textContent = '';
   $('liveCounterWrap').style.display = 'none';
@@ -680,9 +741,15 @@ function nombreEnLettres(n) {
 }
 
 function updateLiveCounterDOM(n) {
-  $('liveCounter').textContent = fmt(n);
+  const el = $('liveCounter');
+  el.textContent = fmt(n);
   $('liveCounterWords').textContent = nombreEnLettres(n);
   $('liveCounterWrap').style.display = 'block';
+  // Petit effet "tick" sur le compteur à chaque incrément
+  el.classList.remove('tick');
+  void el.offsetWidth; // force reflow
+  el.classList.add('tick');
+  setTimeout(() => el.classList.remove('tick'), 90);
 }
 
 function updateLiveCounter(n) {
@@ -732,12 +799,12 @@ function connectContinuous() {
   });
 
   es.addEventListener('digits', e => {
-    const { block, offset } = JSON.parse(e.data);
+    const { block, offset, total } = JSON.parse(e.data);
     appendBlock(block, offset);
 
-    const currentTotal = offset + block.length; // position absolue serveur
-    bumpLiveCounterTo(currentTotal);
-
+    // Le compteur est animé en synchronisation par renderNextDigit.
+    // On met à jour la cible et la barre de progression sur le total serveur.
+    const currentTotal = total || (offset + block.length);
     const goal = visualGoal(currentTotal);
     const pct = goal > 0 ? Math.min(100, Math.round(currentTotal / goal * 100)) : 100;
     $('progressFill').style.width = pct + '%';
