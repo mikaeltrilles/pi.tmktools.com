@@ -195,10 +195,18 @@ async function refreshPiFromFile() {
       distribution: piDistribution,
     });
 
-    if (total > oldTotal) {
+    // Détection d'un NOUVEAU DÉPÔT complet (overwrite/replacement) versus un append progressif.
+    // Si les décimales déjà connues ne sont plus au début du fichier, c'est un nouveau fichier.
+    const isAppend = total >= oldTotal && oldTotal > 0 && digits.startsWith(oldDigits);
+
+    if (!isAppend && (oldTotal > 0 || total > 0)) {
+      // Nouveau fichier uploadé : forcer le rechargement des clients pour afficher le nouveau contenu
+      broadcastFile('reload', { total_decimals: piTotal, source: path.basename(filePath) });
+      console.log(`🔄 Nouveau dépôt détecté — reload envoyé aux clients (${total.toLocaleString('fr-FR')} décimales)`);
+    } else if (total > oldTotal) {
       streamNewFileDigits(oldTotal, total);
     } else if (total < oldTotal || digits !== oldDigits) {
-      // Le fichier a été réécrit / tronqué : demander au clients de se réinitialiser
+      // Le fichier a été réécrit / tronqué : demander aux clients de se réinitialiser
       broadcastFile('reset', { total_decimals: piTotal });
     }
     return true;

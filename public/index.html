@@ -852,6 +852,12 @@ function connectFileStream() {
     toast(`${fmt(total_decimals)} décimales disponibles`, 'ok');
   });
 
+  es.addEventListener('reload', e => {
+    const st = JSON.parse(e.data);
+    toast(`Nouveau fichier détecté (${fmt(st.total_decimals)} décimales) — rechargement…`, 'info');
+    setTimeout(() => window.location.reload(), 1200);
+  });
+
   es.addEventListener('finished', e => {
     const { total_decimals } = JSON.parse(e.data);
     setStatus('connected');
