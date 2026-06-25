@@ -557,29 +557,85 @@ def restore_checkpoint_from_snapshot(digits: int) -> ChudnovskyEngine:
     decimales d'un snapshot. Recalcule les termes Chudnovsky necessaires.
     """
     target_n = int(digits / DIGITS_PER_TERM) + 10
+    log_message(f"🔨 Reconstruction du checkpoint jusqu'a n={target_n:,} (snapshot {digits:,} decimales)...")
     engine = ChudnovskyEngine.initial()
-    engine.add_terms(target_n)
+
+    # Ajout par blocs de 1000 avec logging pour eviter l'impression de blocage
+    block = 1000
+    remaining = target_n
+    while remaining > 0:
+        m = min(block, remaining)
+        engine.add_terms(m)
+        remaining -= m
+        log_message(f"🔨   Checkpoint reconstruction : n={engine.n:,} / {target_n:,}")
+
     engine.digits_done = digits
     engine.save_checkpoint(CHECKPOINT_FILE)
+    log_message(f"✅ Checkpoint reconstruit : n={engine.n:,}, {engine.digits_done:,} decimales")
     return engine
+
+
+def list_remote_checkpoints() -> list[tuple[int, str]]:
+    """
+    Liste les checkpoints historiques distants (pi_checkpoint_*.json)
+    avec leur nombre de decimales, tries par digits decroissant.
+    """
+    try:
+        result = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", f"{REMOTE_USER}@{REMOTE_HOST}",
+             f"ls -1 {REMOTE_DIR}/pi_checkpoint_*.json 2>/dev/null"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            return []
+        checkpoints = []
+        for line in result.stdout.strip().splitlines():
+            remote_file = line.strip()
+            if not remote_file:
+                continue
+            # Le nom est de la forme pi_checkpoint_YYYYMMDD_HHMMSS_DDDDDDdec.json
+            basename = remote_file.rsplit("/", 1)[-1]
+            digits_part = basename.replace("pi_checkpoint_", "").replace(".json", "")
+            # Extraire la partie _DDDdec
+            if "dec" in digits_part:
+                try:
+                    digits_str = digits_part.rsplit("_", 1)[-1].replace("dec", "")
+                    digits = int(digits_str)
+                    checkpoints.append((digits, remote_file))
+                except ValueError:
+                    continue
+        return sorted(checkpoints, reverse=True)
+    except Exception:
+        return []
 
 
 def try_restore_from_remote_checkpoint() -> Optional[ChudnovskyEngine]:
     """
     Essaye de telecharger le checkpoint distant et de l'utiliser.
+    Essaie d'abord le checkpoint principal, puis les historiques.
     Retourne le moteur restaure, ou None si impossible.
     """
+    candidates = [REMOTE_CHECKPOINT_PATH]
     try:
-        tmp_checkpoint = CHECKPOINT_FILE.with_suffix(".remote_checkpoint_tmp")
-        if download_remote_checkpoint(tmp_checkpoint):
-            engine = ChudnovskyEngine.from_checkpoint(tmp_checkpoint)
-            # Sauvegarder definitivement le checkpoint local
-            engine.save_checkpoint(CHECKPOINT_FILE)
-            tmp_checkpoint.unlink(missing_ok=True)
-            log_message(f"🔄 Checkpoint distant restaure : n={engine.n:,}, {engine.digits_done:,} decimales")
-            return engine
-    except Exception as e:
-        log_message(f"⚠️  Impossible de restaurer le checkpoint distant : {e}")
+        for digits, remote_file in list_remote_checkpoints():
+            candidates.append(remote_file)
+    except Exception:
+        pass
+
+    for remote_path in candidates:
+        try:
+            tmp_checkpoint = CHECKPOINT_FILE.with_suffix(".remote_checkpoint_tmp")
+            if download_remote_file(remote_path, tmp_checkpoint):
+                engine = ChudnovskyEngine.from_checkpoint(tmp_checkpoint)
+                # Sauvegarder definitivement le checkpoint local
+                engine.save_checkpoint(CHECKPOINT_FILE)
+                tmp_checkpoint.unlink(missing_ok=True)
+                log_message(f"🔄 Checkpoint distant restaure ({remote_path.rsplit('/',1)[-1]}) : n={engine.n:,}, {engine.digits_done:,} decimales")
+                return engine
+        except Exception as e:
+            log_message(f"⚠️  Impossible de restaurer {remote_path} : {e}")
     return None
 
 
