@@ -98,15 +98,15 @@ function readPiFileSync(filePath) {
     let digits = '3.';
 
     for (const line of lines) {
-      if (line.startsWith('# Nombre total de décimales :')) {
-        total = parseInt(line.split(':')[1].trim(), 10) || 0;
+      if (/^#\s*Nombre total de d[eé]cimales\s*:/i.test(line)) {
+        total = parseInt(line.split(':')[1].trim().replace(/,/g, ''), 10) || 0;
       }
     }
 
     for (const line of lines) {
       const trimmed = line.trim();
-      if (trimmed.startsWith('3.') || /^\d+\.\d+$/.test(trimmed)) {
-        digits = trimmed;
+      if (trimmed.startsWith('3.') || trimmed.startsWith('-3.') || /^-?\d+\.\d+$/.test(trimmed)) {
+        digits = trimmed.startsWith('-') ? trimmed.slice(1) : trimmed;
         break;
       }
     }
@@ -132,15 +132,15 @@ async function readPiFile(filePath) {
     let total = 0;
 
     for (const line of lines) {
-      if (line.startsWith('# Nombre total de décimales :')) {
-        total = parseInt(line.split(':')[1].trim(), 10) || 0;
+      if (/^#\s*Nombre total de d[eé]cimales\s*:/i.test(line)) {
+        total = parseInt(line.split(':')[1].trim().replace(/,/g, ''), 10) || 0;
       }
     }
 
     for (const line of lines) {
       const trimmed = line.trim();
-      if (trimmed.startsWith('3.') || /^\d+\.\d+$/.test(trimmed)) {
-        digits = trimmed;
+      if (trimmed.startsWith('3.') || trimmed.startsWith('-3.') || /^-?\d+\.\d+$/.test(trimmed)) {
+        digits = trimmed.startsWith('-') ? trimmed.slice(1) : trimmed;
         break;
       }
     }
@@ -312,11 +312,11 @@ app.get('/stats', async (req, res) => {
     const txt = await fs.promises.readFile(filePath, 'utf8');
     let total = 0, last = null;
     for (const l of txt.split('\n')) {
-      if (l.startsWith('# Nombre total de décimales :')) total = parseInt(l.split(':')[1].trim(), 10) || 0;
-      if (l.startsWith('# Dernière mise à jour :')) last = new Date(l.split(':').slice(1).join(':').trim()).toISOString();
+      if (/^#\s*Nombre total de d[eé]cimales\s*:/i.test(l)) total = parseInt(l.split(':')[1].trim().replace(/,/g, ''), 10) || 0;
+      if (/^#\s*Derni[eè]re mise [aà] jour\s*:/i.test(l)) last = new Date(l.split(':').slice(1).join(':').trim()).toISOString();
     }
-    const digitsLine = txt.split('\n').find(l => l.trim().startsWith('3.') || /^\d+\.\d+$/.test(l.trim()));
-    const effectiveTotal = Math.max(total, digitsLine ? digitsLine.trim().length - 2 : 0);
+    const digitsLine = txt.split('\n').find(l => l.trim().startsWith('3.') || l.trim().startsWith('-3.') || /^-?\d+\.\d+$/.test(l.trim()));
+    const effectiveTotal = Math.max(total, digitsLine ? digitsLine.trim().replace(/^-/, '').length - 2 : 0);
     res.json({
       total_digits_stored: effectiveTotal,
       last_modified: last || piLastModified,
