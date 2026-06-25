@@ -339,12 +339,16 @@ def deploy_to_production(src: Path) -> bool:
 def parse_digits_from_header(path: Path) -> Optional[int]:
     """
     Lit l'en-tete d'un fichier π et extrait le nombre de decimales.
-    Exemple : '# Nombre total de decimales : 162,672' -> 162672
+    Supporte les variantes avec/sans accent et les separateurs de milliers.
+    Exemples :
+      '# Nombre total de decimales : 162,672' -> 162672
+      '# Nombre total de decimales : 200000'  -> 200000
     """
     try:
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
-                if "Nombre total de decimales" in line:
+                lower = line.lower()
+                if "nombre total de" in lower and "decimales" in lower:
                     digits_str = line.split(":")[-1].strip()
                     digits_str = digits_str.replace(" ", "").replace(",", "").replace(".", "")
                     return int(digits_str)
@@ -371,13 +375,14 @@ def get_remote_file_size(remote_path: str) -> Optional[int]:
     return None
 
 
-def download_remote_snapshot(local_path: Path) -> bool:
+def download_remote_file(remote_path: str, local_path: Path) -> bool:
     """
-    Telecharge le fichier pi_complet.txt du serveur de production.
+    Telecharge un fichier du serveur de production vers un chemin local.
     """
     try:
+        target = f"{REMOTE_USER}@{REMOTE_HOST}:{remote_path}"
         result = subprocess.run(
-            ["scp", "-q", REMOTE_SCP_TARGET, str(local_path)],
+            ["scp", "-q", target, str(local_path)],
             capture_output=True,
             text=True,
             timeout=300,
@@ -387,10 +392,30 @@ def download_remote_snapshot(local_path: Path) -> bool:
         return False
 
 
+def list_remote_txt_files() -> list[str]:
+    """
+    Liste les fichiers .txt presents dans le dossier distant.
+    """
+    try:
+        remote_dir = REMOTE_PATH.rsplit("/", 1)[0]
+        result = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", f"{REMOTE_USER}@{REMOTE_HOST}",
+             f"ls -1 {remote_dir}/*.txt 2>/dev/null"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode == 0:
+            return [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
+    except Exception:
+        return []
+    return []
+
+
 def find_best_snapshot() -> tuple[Optional[Path], int]:
     """
     Cherche le meilleur snapshot disponible :
-    1. Fichier distant sur le serveur o2switch
+    1. Tous les fichiers .txt du dossier distant sur le serveur o2switch
     2. Backups locaux dans BACKUP_DIR
     3. Fichier local OUTPUT_FILE
 
@@ -399,16 +424,28 @@ def find_best_snapshot() -> tuple[Optional[Path], int]:
     best_path: Optional[Path] = None
     best_digits = 0
 
-    # 1. Snapshot distant
+    # 1. Snapshots distants
     try:
-        remote_size = get_remote_file_size(REMOTE_PATH)
-        if remote_size and remote_size > 0:
-            tmp_remote = OUTPUT_FILE.with_suffix(".remote_tmp")
-            if download_remote_snapshot(tmp_remote):
+        remote_files = list_remote_txt_files()
+        for remote_file in remote_files:
+            tmp_remote = OUTPUT_FILE.with_suffix(f".remote_tmp_{Path(remote_file).name}")
+            if download_remote_file(remote_file, tmp_remote):
                 remote_digits = parse_digits_from_header(tmp_remote)
                 if remote_digits and remote_digits > best_digits:
+                    # Supprimer l'ancien meilleur snapshot distant temporaire
+                    if best_path and str(best_path).endswith(".remote_tmp"):
+                        try:
+                            best_path.unlink()
+                        except Exception:
+                            pass
                     best_path = tmp_remote
                     best_digits = remote_digits
+                else:
+                    # Nettoyer le snapshot distant non retenu
+                    try:
+                        tmp_remote.unlink()
+                    except Exception:
+                        pass
     except Exception:
         pass
 
@@ -710,11 +747,10 @@ def main():
                 if snapshot_path != OUTPUT_FILE:
                     shutil.copy2(snapshot_path, OUTPUT_FILE)
                     log_message(f"📝 Fichier principal restaure depuis le snapshot")
-                # Supprimer le fichier temporaire distant s'il existe
-                remote_tmp = OUTPUT_FILE.with_suffix(".remote_tmp")
-                if snapshot_path == remote_tmp:
+                # Nettoyer les fichiers temporaires distants
+                for tmp in Path(".").glob("*.remote_tmp_*"):
                     try:
-                        remote_tmp.unlink()
+                        tmp.unlink()
                     except Exception:
                         pass
                 # Reconstruire le checkpoint a partir de ce snapshot
@@ -735,10 +771,10 @@ def main():
                     if snapshot_path != OUTPUT_FILE:
                         shutil.copy2(snapshot_path, OUTPUT_FILE)
                         log_message(f"📝 Fichier principal restaure depuis le snapshot")
-                    remote_tmp = OUTPUT_FILE.with_suffix(".remote_tmp")
-                    if snapshot_path == remote_tmp:
+                    # Nettoyer les fichiers temporaires distants
+                    for tmp in Path(".").glob("*.remote_tmp_*"):
                         try:
-                            remote_tmp.unlink()
+                            tmp.unlink()
                         except Exception:
                             pass
                     engine = restore_checkpoint_from_snapshot(snapshot_digits)
