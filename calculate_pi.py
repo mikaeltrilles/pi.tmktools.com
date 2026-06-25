@@ -336,6 +336,115 @@ def deploy_to_production(src: Path) -> bool:
     return verify_remote_upload(expected_size)
 
 
+def parse_digits_from_header(path: Path) -> Optional[int]:
+    """
+    Lit l'en-tete d'un fichier π et extrait le nombre de decimales.
+    Exemple : '# Nombre total de decimales : 162,672' -> 162672
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                if "Nombre total de decimales" in line:
+                    digits_str = line.split(":")[-1].strip()
+                    digits_str = digits_str.replace(" ", "").replace(",", "").replace(".", "")
+                    return int(digits_str)
+    except Exception:
+        return None
+
+
+def get_remote_file_size(remote_path: str) -> Optional[int]:
+    """
+    Recupere la taille d'un fichier distant via SSH.
+    """
+    try:
+        result = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", REMOTE_SCP_TARGET.rsplit(":", 1)[0],
+             f"stat -c %s {remote_path}"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode == 0:
+            return int(result.stdout.strip())
+    except Exception:
+        return None
+    return None
+
+
+def download_remote_snapshot(local_path: Path) -> bool:
+    """
+    Telecharge le fichier pi_complet.txt du serveur de production.
+    """
+    try:
+        result = subprocess.run(
+            ["scp", "-q", REMOTE_SCP_TARGET, str(local_path)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def find_best_snapshot() -> tuple[Optional[Path], int]:
+    """
+    Cherche le meilleur snapshot disponible :
+    1. Fichier distant sur le serveur o2switch
+    2. Backups locaux dans BACKUP_DIR
+    3. Fichier local OUTPUT_FILE
+
+    Retourne (chemin_du_fichier, nombre_de_decimales) ou (None, 0).
+    """
+    best_path: Optional[Path] = None
+    best_digits = 0
+
+    # 1. Snapshot distant
+    try:
+        remote_size = get_remote_file_size(REMOTE_PATH)
+        if remote_size and remote_size > 0:
+            tmp_remote = OUTPUT_FILE.with_suffix(".remote_tmp")
+            if download_remote_snapshot(tmp_remote):
+                remote_digits = parse_digits_from_header(tmp_remote)
+                if remote_digits and remote_digits > best_digits:
+                    best_path = tmp_remote
+                    best_digits = remote_digits
+    except Exception:
+        pass
+
+    # 2. Backups locaux
+    try:
+        for backup in sorted(BACKUP_DIR.glob("pi_complet_backup_*.txt"), key=lambda p: p.stat().st_mtime, reverse=True):
+            digits = parse_digits_from_header(backup)
+            if digits and digits > best_digits:
+                best_path = backup
+                best_digits = digits
+    except Exception:
+        pass
+
+    # 3. Fichier local actuel
+    if OUTPUT_FILE.exists():
+        local_digits = parse_digits_from_header(OUTPUT_FILE)
+        if local_digits and local_digits > best_digits:
+            best_path = OUTPUT_FILE
+            best_digits = local_digits
+
+    return best_path, best_digits
+
+
+def restore_checkpoint_from_snapshot(digits: int) -> ChudnovskyEngine:
+    """
+    Reconstruit un checkpoint valide au format v2 a partir du nombre de
+    decimales d'un snapshot. Recalcule les termes Chudnovsky necessaires.
+    """
+    target_n = int(digits / DIGITS_PER_TERM) + 10
+    engine = ChudnovskyEngine.initial()
+    engine.add_terms(target_n)
+    engine.digits_done = digits
+    engine.save_checkpoint(CHECKPOINT_FILE)
+    return engine
+
+
 def make_backup(src: Path, digits_done: int) -> Optional[Path]:
     try:
         if not BACKUP_DIR.exists():
@@ -591,15 +700,52 @@ def main():
             log_message("🗑️  Checkpoint supprime (reset demande)")
 
         if args.no_resume or not CHECKPOINT_FILE.exists():
-            engine = ChudnovskyEngine.initial()
-            log_message("🚀 Demarrage depuis zero")
+            # Si pas de checkpoint valide, chercher un snapshot de secours
+            # (distant ou local) pour eviter de recommencer a zero.
+            snapshot_path, snapshot_digits = find_best_snapshot()
+            if snapshot_path and snapshot_digits > 0:
+                log_message(f"📸 Snapshot de secours trouve : {snapshot_digits:,} decimales")
+                # Copier le snapshot comme fichier principal pour que le site
+                # affiche immediatement le maximum de decimales disponibles.
+                if snapshot_path != OUTPUT_FILE:
+                    shutil.copy2(snapshot_path, OUTPUT_FILE)
+                    log_message(f"📝 Fichier principal restaure depuis le snapshot")
+                # Supprimer le fichier temporaire distant s'il existe
+                remote_tmp = OUTPUT_FILE.with_suffix(".remote_tmp")
+                if snapshot_path == remote_tmp:
+                    try:
+                        remote_tmp.unlink()
+                    except Exception:
+                        pass
+                # Reconstruire le checkpoint a partir de ce snapshot
+                engine = restore_checkpoint_from_snapshot(snapshot_digits)
+                log_message(f"🔄 Reprise depuis le snapshot : {snapshot_digits:,} decimales, n={engine.n:,}")
+            else:
+                engine = ChudnovskyEngine.initial()
+                log_message("🚀 Demarrage depuis zero")
         else:
             try:
                 engine = ChudnovskyEngine.from_checkpoint(CHECKPOINT_FILE)
                 log_message(f"🔄 Reprise du checkpoint : n={engine.n:,}, {engine.digits_done:,} decimales deja validees")
             except Exception as e:
-                log_message(f"⚠️  Checkpoint invalide ou vide ({e}) — demarrage depuis zero")
-                engine = ChudnovskyEngine.initial()
+                log_message(f"⚠️  Checkpoint invalide ou vide ({e}) — recherche d'un snapshot de secours")
+                snapshot_path, snapshot_digits = find_best_snapshot()
+                if snapshot_path and snapshot_digits > 0:
+                    log_message(f"📸 Snapshot de secours trouve : {snapshot_digits:,} decimales")
+                    if snapshot_path != OUTPUT_FILE:
+                        shutil.copy2(snapshot_path, OUTPUT_FILE)
+                        log_message(f"📝 Fichier principal restaure depuis le snapshot")
+                    remote_tmp = OUTPUT_FILE.with_suffix(".remote_tmp")
+                    if snapshot_path == remote_tmp:
+                        try:
+                            remote_tmp.unlink()
+                        except Exception:
+                            pass
+                    engine = restore_checkpoint_from_snapshot(snapshot_digits)
+                    log_message(f"🔄 Reprise depuis le snapshot : {snapshot_digits:,} decimales, n={engine.n:,}")
+                else:
+                    log_message("🚀 Aucun snapshot disponible — demarrage depuis zero")
+                    engine = ChudnovskyEngine.initial()
 
         printer = ProgressPrinter()
 
