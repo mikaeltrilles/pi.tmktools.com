@@ -555,24 +555,72 @@ def restore_checkpoint_from_snapshot(digits: int) -> ChudnovskyEngine:
     """
     Reconstruit un checkpoint valide au format v2 a partir du nombre de
     decimales d'un snapshot. Recalcule les termes Chudnovsky necessaires.
+
+    La reconstruction est faite par blocs et un checkpoint intermediaire est
+    sauvegarde tous les 5000 termes. Si le processus est interrompu, le
+    prochain demarrage reprendra depuis le dernier checkpoint intermediaire.
+    Un fichier .reconstructing est cree pour informer le watchdog que le
+    processus est en pleine reconstruction et ne doit pas etre tue.
     """
     target_n = int(digits / DIGITS_PER_TERM) + 10
-    log_message(f"🔨 Reconstruction du checkpoint jusqu'a n={target_n:,} (snapshot {digits:,} decimales)...")
-    engine = ChudnovskyEngine.initial()
+    RECONSTRUCTING_FILE = CHECKPOINT_FILE.with_suffix(".reconstructing")
+    INTERMEDIATE_PREFIX = CHECKPOINT_FILE.with_suffix(".reconstruct_")
 
-    # Ajout par blocs de 1000 avec logging pour eviter l'impression de blocage
-    block = 1000
-    remaining = target_n
-    while remaining > 0:
-        m = min(block, remaining)
-        engine.add_terms(m)
-        remaining -= m
-        log_message(f"🔨   Checkpoint reconstruction : n={engine.n:,} / {target_n:,}")
+    # Signaler au watchdog qu'une longue reconstruction est en cours
+    RECONSTRUCTING_FILE.write_text(str(target_n), encoding="utf-8")
 
-    engine.digits_done = digits
-    engine.save_checkpoint(CHECKPOINT_FILE)
-    log_message(f"✅ Checkpoint reconstruit : n={engine.n:,}, {engine.digits_done:,} decimales")
-    return engine
+    try:
+        # Chercher un checkpoint intermediaire existant pour reprendre
+        engine: Optional[ChudnovskyEngine] = None
+        best_intermediate_n = -1
+        for intermediate in Path(".").glob("pi_checkpoint.reconstruct_*.json"):
+            try:
+                candidate = ChudnovskyEngine.from_checkpoint(intermediate)
+                if candidate.n <= target_n and candidate.n > best_intermediate_n:
+                    engine = candidate
+                    best_intermediate_n = candidate.n
+            except Exception:
+                continue
+
+        if engine is not None:
+            log_message(f"🔨 Reprise de la reconstruction depuis n={engine.n:,} / {target_n:,}")
+        else:
+            log_message(f"🔨 Reconstruction du checkpoint jusqu'a n={target_n:,} (snapshot {digits:,} decimales)...")
+            engine = ChudnovskyEngine.initial()
+
+        # Ajout par blocs de 1000 avec logging et checkpoints intermediaires
+        block = 1000
+        intermediate_block = 5000
+        next_intermediate = ((engine.n // intermediate_block) + 1) * intermediate_block
+
+        while engine.n < target_n:
+            remaining = target_n - engine.n
+            m = min(block, remaining)
+            engine.add_terms(m)
+            log_message(f"🔨   Checkpoint reconstruction : n={engine.n:,} / {target_n:,}")
+
+            # Sauvegarde d'un checkpoint intermediaire tous les 5000 termes
+            if engine.n >= next_intermediate:
+                intermediate_path = CHECKPOINT_FILE.with_suffix(f".reconstruct_{engine.n:08d}.json")
+                engine.save_checkpoint(intermediate_path)
+                log_message(f"💾 Checkpoint intermediaire sauvegarde : {intermediate_path.name}")
+                next_intermediate += intermediate_block
+
+        engine.digits_done = digits
+        engine.save_checkpoint(CHECKPOINT_FILE)
+        log_message(f"✅ Checkpoint reconstruit : n={engine.n:,}, {engine.digits_done:,} decimales")
+        return engine
+    finally:
+        # Nettoyer le fichier .reconstructing et les checkpoints intermediaires
+        try:
+            RECONSTRUCTING_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+        for intermediate in Path(".").glob("pi_checkpoint.reconstruct_*.json"):
+            try:
+                intermediate.unlink()
+            except Exception:
+                pass
 
 
 def list_remote_checkpoints() -> list[tuple[int, str]]:
@@ -611,32 +659,75 @@ def list_remote_checkpoints() -> list[tuple[int, str]]:
         return []
 
 
-def try_restore_from_remote_checkpoint() -> Optional[ChudnovskyEngine]:
+def find_remote_checkpoint_for_snapshot(digits: int) -> Optional[str]:
     """
-    Essaye de telecharger le checkpoint distant et de l'utiliser.
-    Essaie d'abord le checkpoint principal, puis les historiques.
-    Retourne le moteur restaure, ou None si impossible.
+    Cherche un checkpoint distant (principal ou historique) avec au moins
+    `digits` decimales. Retourne le chemin distant le plus adapte, ou None.
     """
-    candidates = [REMOTE_CHECKPOINT_PATH]
+    candidates = [(0, REMOTE_CHECKPOINT_PATH)]
     try:
-        for digits, remote_file in list_remote_checkpoints():
-            candidates.append(remote_file)
+        for hist_digits, hist_path in list_remote_checkpoints():
+            candidates.append((hist_digits, hist_path))
     except Exception:
         pass
 
-    for remote_path in candidates:
+    best_path = None
+    best_digits = 0
+    for cand_digits, cand_path in candidates:
+        if cand_digits >= digits and cand_digits > best_digits:
+            best_path = cand_path
+            best_digits = cand_digits
+    return best_path
+
+
+def try_restore_from_remote_checkpoint(remote_path: Optional[str] = None) -> Optional[ChudnovskyEngine]:
+    """
+    Essaye de telecharger le checkpoint distant et de l'utiliser.
+    Si `remote_path` est fourni, telecharge ce fichier specifique.
+    Sinon essaie d'abord le checkpoint principal, puis les historiques.
+    Retourne le moteur restaure, ou None si impossible.
+    """
+    candidates = [remote_path] if remote_path else [REMOTE_CHECKPOINT_PATH]
+    if not remote_path:
+        try:
+            for digits, remote_file in list_remote_checkpoints():
+                candidates.append(remote_file)
+        except Exception:
+            pass
+
+    for path in candidates:
+        if not path:
+            continue
         try:
             tmp_checkpoint = CHECKPOINT_FILE.with_suffix(".remote_checkpoint_tmp")
-            if download_remote_file(remote_path, tmp_checkpoint):
+            if download_remote_file(path, tmp_checkpoint):
                 engine = ChudnovskyEngine.from_checkpoint(tmp_checkpoint)
                 # Sauvegarder definitivement le checkpoint local
                 engine.save_checkpoint(CHECKPOINT_FILE)
                 tmp_checkpoint.unlink(missing_ok=True)
-                log_message(f"🔄 Checkpoint distant restaure ({remote_path.rsplit('/',1)[-1]}) : n={engine.n:,}, {engine.digits_done:,} decimales")
+                log_message(f"🔄 Checkpoint distant restaure ({path.rsplit('/',1)[-1]}) : n={engine.n:,}, {engine.digits_done:,} decimales")
                 return engine
         except Exception as e:
-            log_message(f"⚠️  Impossible de restaurer {remote_path} : {e}")
+            log_message(f"⚠️  Impossible de restaurer {path} : {e}")
     return None
+
+
+def restore_from_snapshot_with_remote_fallback(snapshot_digits: int) -> ChudnovskyEngine:
+    """
+    Restaure le moteur a partir d'un snapshot .txt.
+    Essaie d'abord d'utiliser un checkpoint distant avec au moins autant
+    de decimales (evite une longue reconstruction). Sinon reconstruit le
+    checkpoint localement avec des sauvegardes intermediaires.
+    """
+    remote_checkpoint = find_remote_checkpoint_for_snapshot(snapshot_digits)
+    if remote_checkpoint:
+        log_message(f"📸 Checkpoint distant adapte trouve : {remote_checkpoint.rsplit('/',1)[-1]}")
+        engine = try_restore_from_remote_checkpoint(remote_checkpoint)
+        if engine is not None:
+            return engine
+        log_message("⚠️  Echec de la restauration du checkpoint distant — reconstruction locale")
+
+    return restore_checkpoint_from_snapshot(snapshot_digits)
 
 
 def make_backup(src: Path, digits_done: int) -> Optional[Path]:
@@ -909,7 +1000,7 @@ def main():
                             tmp.unlink()
                         except Exception:
                             pass
-                    engine = restore_checkpoint_from_snapshot(snapshot_digits)
+                    engine = restore_from_snapshot_with_remote_fallback(snapshot_digits)
                     log_message(f"🔄 Reprise depuis le snapshot : {snapshot_digits:,} decimales, n={engine.n:,}")
                 else:
                     engine = ChudnovskyEngine.initial()

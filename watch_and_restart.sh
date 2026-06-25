@@ -22,6 +22,9 @@ WATCHDOG_LOG="${SCRIPT_DIR}/pi_watchdog.log"
 # Delai pendant lequel le watchdog tolere l'absence temporaire du PID
 # (en secondes). 5 minutes est une valeur conservative.
 TOLERANCE_SECONDS=300
+# Delai supplementaire si une reconstruction de checkpoint est en cours.
+# La reconstruction peut durer plusieurs dizaines de minutes a haute precision.
+RECONSTRUCTING_TOLERANCE_SECONDS=1800
 
 log_msg() {
     local msg="$1"
@@ -56,10 +59,20 @@ if check_running; then
     exit 0
 fi
 
-# Le processus semble absent. Attendre TOLERANCE_SECONDS et reverifier
-# pour eviter de tuer un processus simplement ralenti par un palier long.
-log_msg "Processus calculate_pi.py non detecte — attente de ${TOLERANCE_SECONDS}s avant action..."
-sleep "${TOLERANCE_SECONDS}"
+# Detecter une reconstruction de checkpoint en cours
+RECONSTRUCTING_FILE="${SCRIPT_DIR}/pi_checkpoint.reconstructing"
+WAIT_SECONDS="${TOLERANCE_SECONDS}"
+if [ -f "${RECONSTRUCTING_FILE}" ]; then
+    WAIT_SECONDS="${RECONSTRUCTING_TOLERANCE_SECONDS}"
+    log_msg "Reconstruction de checkpoint detectee — attente de ${WAIT_SECONDS}s avant action..."
+else
+    log_msg "Processus calculate_pi.py non detecte — attente de ${WAIT_SECONDS}s avant action..."
+fi
+
+# Le processus semble absent. Attendre WAIT_SECONDS et reverifier
+# pour eviter de tuer un processus simplement ralenti par un palier long
+# ou en pleine reconstruction.
+sleep "${WAIT_SECONDS}"
 
 if check_running; then
     log_msg "Processus de retour apres attente — pas de relancement"
@@ -69,7 +82,7 @@ fi
 log_msg "Processus toujours inactif apres ${TOLERANCE_SECONDS}s — relancement"
 
 # Nettoyage des locks/pid obsolete au cas ou
-rm -f "${SCRIPT_DIR}/pi_calculate.lock" "${PID_FILE}" 2>/dev/null || true
+rm -f "${SCRIPT_DIR}/pi_calculate.lock" "${PID_FILE}" "${RECONSTRUCTING_FILE}" 2>/dev/null || true
 
 # Tue tout processus fantome restant
 pgrep -f "python3 calculate_pi.py" | xargs -r kill -9 2>/dev/null || true
