@@ -1,15 +1,16 @@
-# π Calculator — pi.tmktools.com
+# π Explorer — pi.tmktools.com
 
-Calcul live des décimales de Pi avec précision arbitraire.
+Retranscription en temps réel des décimales de Pi depuis un fichier uploadé par un Raspberry.
 
 ## Fonctionnalités
 
-- Calcul en temps réel via **Server-Sent Events**
-- Algorithme de **Machin** avec `BigInt` natif Node.js (thread worker)
-- Affichage coloré avec le **rang** de chaque décimale
+- Lecture en temps réel du fichier `data/pi_complet.txt` via **Server-Sent Events**
+- Affichage décimale par décimale dans le DOM avec rang coloré
 - Distribution statistique des chiffres 0–9
 - Recherche par rang (ex : « quelle est la 1000ème décimale ? »)
-- Sauvegarde et téléchargement du fichier `pi_digits.txt`
+- Recherche d'une chaîne de chiffres dans les décimales disponibles
+- Snapshots automatiques aux paliers 10, 20, 50, 100, 500, 1000, 5000, 1×10ⁿ et 5×10ⁿ
+- Téléchargement du fichier global
 
 ## Stack
 
@@ -20,7 +21,7 @@ Node.js 18+ · Express 4 · Vanilla JS · Server-Sent Events
 ```bash
 npm install
 npm start
-# → http://localhost:3000
+# → http://localhost:3001
 ```
 
 Mode développement (hot-reload natif Node.js 18+) :
@@ -29,52 +30,50 @@ Mode développement (hot-reload natif Node.js 18+) :
 npm run dev
 ```
 
+Le serveur attend que le Raspberry upload `data/pi_complet.txt` (ou un fichier `data/pi_N.txt`).
+
 ## Routes API
 
 | Méthode | Route | Description |
 |---------|-------|-------------|
 | GET | `/` | Frontend |
-| GET | `/stream?n=1000` | SSE — blocs de 50 chiffres toutes les 150 ms |
-| GET | `/digits?n=100` | JSON synchrone |
-| POST | `/save` | Sauvegarde dans `data/pi_digits.txt` |
-| GET | `/stored` | Contenu du fichier stocké (text/plain) |
-| GET | `/stats` | Métriques du fichier stocké |
+| GET | `/stream-continuous` | SSE — retranscription continue des décimales |
+| GET | `/continuous-state` | État courant du fichier lu |
+| GET | `/digit?rank=N` | Décimale au rang N |
+| GET | `/digits-around?rank=N` | Bloc de ~500 décimales autour du rang N |
+| GET | `/search-chain?q=14159` | Positions d'une chaîne de chiffres |
+| GET | `/snapshots` | Liste des snapshots générés |
+| GET | `/snapshot/:n` | Télécharger le snapshot `pi_n.txt` |
+| GET | `/complet` | Télécharger le fichier global |
+| GET | `/stats` | Métriques du fichier global |
 
 ## Architecture
 
 ```
 pi.tmktools.com/
-├── server.js          → Backend Express + worker_threads
+├── server.js          → Backend Express — lecture fichier + SSE
 ├── package.json
 ├── .gitignore
 ├── README.md
 ├── data/
-│   ├── pi_digits.txt  → Dernière sauvegarde
-│   └── pi_history.log → Historique des sauvegardes
+│   ├── pi_complet.txt → Fichier uploadé par le Raspberry
+│   ├── pi_N.txt       → Snapshots de paliers
+│   └── pi_history.log → Historique des mises à jour
 └── public/
     └── index.html     → Frontend tout-en-un
 ```
 
 ## Déploiement
 
-Le serveur écoute sur le port `3000`. Mettez-le derrière un reverse proxy
+Le serveur écoute sur le port `3001`. Mettez-le derrière un reverse proxy
 (Apache/Nginx) avec buffering désactivé pour les SSE.
 
-### Nginx (recommandé)
+### Apache
 
-```nginx
-location / {
-    proxy_pass         http://127.0.0.1:3000;
-    proxy_http_version 1.1;
-    proxy_buffering    off;
-    proxy_cache        off;
-}
-location /stream {
-    proxy_pass         http://127.0.0.1:3000/stream;
-    proxy_buffering    off;
-    proxy_read_timeout 3600s;
-    add_header X-Accel-Buffering "no";
-}
+```apache
+RewriteEngine On
+RewriteBase /
+RewriteRule ^(.*)$ http://127.0.0.1:3001/$1 [P,L]
 ```
 
 ---

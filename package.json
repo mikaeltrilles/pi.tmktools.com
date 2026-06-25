@@ -1,7 +1,7 @@
 {
   "name": "pi-tmktools",
   "version": "1.0.0",
-  "description": "Live Pi digits calculator",
+  "description": "Retranscription en temps réel des décimales de Pi depuis un fichier uploadé par Raspberry",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

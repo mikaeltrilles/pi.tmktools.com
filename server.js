@@ -111,8 +111,8 @@ function readPiFileSync(filePath) {
       }
     }
 
-    const computedTotal = Math.max(total, digits.length - 2);
-    return { digits, total: computedTotal, lastModified: fs.statSync(filePath).mtime.toISOString() };
+    const effectiveTotal = Math.max(total, digits.length - 2);
+    return { digits, total: effectiveTotal, lastModified: fs.statSync(filePath).mtime.toISOString() };
   } catch (e) {
     if (e.code === 'ENOENT') return { digits: '3.', total: 0, lastModified: null };
     throw e;
@@ -282,7 +282,7 @@ app.post('/save', async (req, res) => {
       '# Pi Digits made with ♥ by PI Explorer',
       `# Généré le : ${new Date().toISOString()}`,
       `# Nombre de décimales : ${digits.length - 2}`,
-      '# Algorithme : Chudnovsky (BigInt)',
+      '# Source : sauvegarde manuelle',
       '#',
       digits, ''
     ].join('\n');
@@ -316,15 +316,15 @@ app.get('/stats', async (req, res) => {
       if (l.startsWith('# Dernière mise à jour :')) last = new Date(l.split(':').slice(1).join(':').trim()).toISOString();
     }
     const digitsLine = txt.split('\n').find(l => l.trim().startsWith('3.') || /^\d+\.\d+$/.test(l.trim()));
-    const computedTotal = Math.max(total, digitsLine ? digitsLine.trim().length - 2 : 0);
+    const effectiveTotal = Math.max(total, digitsLine ? digitsLine.trim().length - 2 : 0);
     res.json({
-      total_digits_stored: computedTotal,
-      last_computed: last || piLastModified,
+      total_digits_stored: effectiveTotal,
+      last_modified: last || piLastModified,
       file_size_kb: Math.round(st.size / 1024 * 10) / 10,
       source_file: path.basename(filePath),
     });
   } catch (e) {
-    if (e.code === 'ENOENT') return res.json({ total_digits_stored: piTotal, last_computed: piLastModified, file_size_kb: 0, source_file: path.basename(filePath) });
+    if (e.code === 'ENOENT') return res.json({ total_digits_stored: piTotal, last_modified: piLastModified, file_size_kb: 0, source_file: path.basename(filePath) });
     res.status(500).json({ error: 'Erreur' });
   }
 });

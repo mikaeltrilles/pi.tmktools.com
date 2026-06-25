@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PI Explorer — Calcul en temps réel</title>
+<title>PI Explorer — Retranscription en temps réel</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <meta name="description" content="Explorateur professionnel des décimales de Pi.">
 
@@ -151,7 +151,7 @@ input#customN:focus { border-color:var(--cyan); }
   padding:1.25rem; overflow-x:auto; overflow-y:auto; max-height:60vh; min-height:160px;
 }
 .pi-stage:empty::before {
-  content:"Connexion au calcul scientifique en cours… Les décimales apparaîtront ici en temps réel."; color:var(--text-faint);
+  content:"Connexion au fichier en cours… Les décimales apparaîtront ici en temps réel."; color:var(--text-faint);
   font-size:0.8rem; display:block; text-align:center; padding-top:3rem;
 }
 
@@ -225,12 +225,6 @@ input#customN:focus { border-color:var(--cyan); }
   color:var(--text-main); margin-bottom:0.75rem; display:flex; align-items:center; gap:0.4rem;
 }
 .panel h3 .icon { font-size:1rem; }
-
-/* ── Progress step ── */
-.progress-area { margin-bottom:1.25rem; }
-.progress-track { height:4px; background:var(--bg-panel); border-radius:2px; overflow:hidden; }
-.progress-fill { height:100%; width:0%; background:linear-gradient(90deg, var(--magenta), var(--cyan)); transition:width .25s ease; box-shadow:0 0 14px var(--cyan-dim); }
-.progress-meta { display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:0.65rem; color:var(--text-dim); margin-top:0.4rem; letter-spacing:0.04em; }
 
 /* Distribution */
 .dist-row { display:grid; grid-template-columns: 1.1rem 1fr auto; gap:0.4rem; align-items:center; margin-bottom:0.35rem; }
@@ -318,18 +312,17 @@ input#customN:focus { border-color:var(--cyan); }
     </svg>
     <div>
       <h1>PI <span>Explorer</span></h1>
-      <div class="tagline">CALCUL SCIENTIFIQUE DE HAUTE PRÉCISION — EXPLORATION CONTINUE DE PI</div>
+      <div class="tagline">RETRANSMISSION DES DÉCIMALES DE PI — EXPLORATION CONTINUE</div>
     </div>
   </div>
 
   <div class="status-bar">
-    <div class="badge" id="statusBadge"><span class="dot"></span><span id="statusText">Prêt</span></div>
-    <div class="mode-badge" id="modeBadge" style="display:none;">Mode continu</div>
+    <div class="badge" id="statusBadge"><span class="dot"></span><span id="statusText">Hors ligne</span></div>
   </div>
 
   <div class="live-counter" id="liveCounterWrap" style="display:none;">
     <div class="n" id="liveCounter">0</div>
-    <div class="label">Décimales calculées</div>
+    <div class="label">Décimales retranscrites</div>
     <div class="label" id="liveCounterWords" style="font-style:italic;color:var(--text-dim);margin-top:0.15rem;"></div>
   </div>
 </header>
@@ -337,18 +330,7 @@ input#customN:focus { border-color:var(--cyan); }
 <!-- ═════════════════════ TOOLBAR ═════════════════════ -->
 <div class="toolbar">
   <div class="toolbar-group">
-    <div class="mode-badge" id="modeBadge">Calcul continu actif</div>
     <button id="btnReset" class="btn btn-reset">↺ Resync</button>
-  </div>
-</div>
-
-
-<!-- ═════════════════════ PROGRESS STEP ═════════════════════ -->
-<div class="progress-area" id="progressWrap" style="display:none;">
-  <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
-  <div class="progress-meta">
-    <span id="progDigits">0 / 0</span>
-    <span id="progPct">0 %</span>
   </div>
 </div>
 
@@ -401,14 +383,14 @@ input#customN:focus { border-color:var(--cyan); }
 </div>
 
 <footer class="footer">
-  PI Explorer — Source : pi_complet.txt uploadé par Raspberry · Node.js · Express · SSE · pi.tmktools.com
+  PI Explorer — Retranscription du fichier pi_complet.txt uploadé par Raspberry · Node.js · Express · SSE · pi.tmktools.com
 </footer>
 
 </div>
 
 <script>
 /* ════════════════════════════════════════════════════════════════════════════
-   FRONTEND LOGIC — Dual mode : Standard + Continu
+   FRONTEND LOGIC — Mode retranscription depuis fichier
    ════════════════════════════════════════════════════════════════════════════ */
 const $ = id => document.getElementById(id);
 
@@ -420,7 +402,7 @@ let dist = new Array(10).fill(0);
 let currentRow = null;
 let currentRowStartRank = 1;
 let rowCellCount = 0;
-let continuousRunning = false;
+let fileStreamConnected = false;
 let liveCounterCurrent = 0;
 let liveCounterTarget = 0;
 let liveCounterTimer = null;
@@ -437,8 +419,8 @@ let totalClientDigits = 0;       // total reçu pour la vitesse
 /* ── Utilities ── */
 function setStatus(state) {
   const b = $('statusBadge');
-  b.className = 'badge ' + ({ computing:'on', done:'ok', error:'warn', idle:'' }[state] || '');
-  $('statusText').textContent = { computing:'Calcul en cours…', done:'Terminé', error:'Erreur', idle:'Prêt' }[state] || 'Prêt';
+  b.className = 'badge ' + ({ live:'on', connected:'ok', error:'warn', idle:'' }[state] || '');
+  $('statusText').textContent = { live:'Retranscription en direct', connected:'Connecté', error:'Erreur', idle:'Hors ligne' }[state] || 'Hors ligne';
 }
 let toastTimers = new Map();
 function toast(msg, type='info') {
@@ -499,7 +481,7 @@ async function scrollToRank(rank) {
   return false;
 }
 
-/* ── Distribution (pourcentage sur le total calculé) ── */
+/* ── Distribution (pourcentage sur le total retranscrit) ── */
 function renderDist() {
   const total = Math.max(count, 1);
   const colors = ['#60a5fa','#34d399','#a78bfa','#f472b6','#fb923c','#facc15','#4ade80','#38bdf8','#e879f9','#f87171'];
@@ -626,9 +608,6 @@ function hardReset() {
   dist.fill(0); allDigits = '3.';
   currentRow = null; currentRowStartRank = 1; rowCellCount = 0;
   digitQueue = []; latestDigitEl = null;
-  $('progressFill').style.width = '0%';
-  $('progDigits').textContent = '0 / 0';
-  $('progPct').textContent = '0 %';
   liveCounterCurrent = 0;
   liveCounterTarget = 0;
   $('liveCounter').textContent = '0';
@@ -639,7 +618,7 @@ function hardReset() {
   $('rankOut').textContent = 'Entrez un rang pour afficher la décimale correspondante.';
   $('chainOut').textContent = 'Entrez une chaîne de chiffres (2–20).';
   reconnectDelay = 2000;
-  connectContinuous();
+  connectFileStream();
 }
 
 /* ── Snapshots ── */
@@ -781,39 +760,22 @@ function bumpLiveCounterTo(n) {
   }, 16); // ~60 fps
 }
 
-function connectContinuous() {
+function connectFileStream() {
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   if (es) { try { es.close(); } catch {} }
-  $('progressWrap').style.display = 'block';
-  setStatus('computing');
+  setStatus('live');
 
   es = new EventSource('/stream-continuous');
-
-  function visualGoal(n) {
-    const goals = [100,500,1000,5000,10000,50000,100000,200000,500000,1000000];
-    for (const g of goals) if (n < g) return g;
-    let g = 1000000;
-    while (g <= n) g *= 2;
-    return g;
-  }
 
   es.addEventListener('state', e => {
     const st = JSON.parse(e.data);
     serverTotalDigits = st.total_decimals || 0;
     updateLiveCounter(serverTotalDigits);
-    $('progressWrap').style.display = 'block';
   });
 
   es.addEventListener('digits', e => {
-    const { block, offset, total } = JSON.parse(e.data);
+    const { block, offset } = JSON.parse(e.data);
     appendBlock(block, offset);
-
-    const currentTotal = total || (offset + block.length);
-    const goal = visualGoal(currentTotal);
-    const pct = goal > 0 ? Math.min(100, Math.round(currentTotal / goal * 100)) : 100;
-    $('progressFill').style.width = pct + '%';
-    $('progDigits').textContent = fmt(currentTotal) + ' / ' + fmt(goal);
-    $('progPct').textContent = pct + ' %';
   });
 
   es.addEventListener('milestone', e => {
@@ -823,27 +785,11 @@ function connectContinuous() {
     toast(`${fmt(total_decimals)} décimales disponibles`, 'ok');
   });
 
-  es.addEventListener('status', e => {
-    const { current_decimals } = JSON.parse(e.data);
-    const goal = visualGoal(current_decimals);
-    const pct = goal > 0 ? Math.min(100, Math.round(current_decimals / goal * 100)) : 0;
-    $('progressFill').style.width = pct + '%';
-    $('progDigits').textContent = fmt(current_decimals) + ' / ' + fmt(goal);
-    $('progPct').textContent = pct + ' %';
-  });
-
   es.addEventListener('finished', e => {
     const { total_decimals } = JSON.parse(e.data);
-    setStatus('done');
-    continuousRunning = false;
+    setStatus('connected');
+    fileStreamConnected = false;
     toast(`${fmt(total_decimals)} décimales disponibles`, 'ok');
-  });
-
-  es.addEventListener('stopped', e => {
-    const { total_decimals } = JSON.parse(e.data);
-    setStatus('idle');
-    continuousRunning = false;
-    toast(`${fmt(total_decimals)} décimales disponibles`, 'info');
   });
 
   es.onerror = () => {
@@ -852,26 +798,28 @@ function connectContinuous() {
 
   es.onclose = () => {
     if (intentionalClose) { intentionalClose = false; return; }
-    continuousRunning = false;
+    fileStreamConnected = false;
+    setStatus('idle');
     if (document.hidden) {
       document.addEventListener('visibilitychange', function vis() {
         document.removeEventListener('visibilitychange', vis);
-        if (!document.hidden) connectContinuous();
+        if (!document.hidden) connectFileStream();
       }, { once: true });
       return;
     }
     reconnectDelay = Math.min(reconnectDelay * 1.5, 30000);
     reconnectTimer = setTimeout(() => {
-      connectContinuous();
+      connectFileStream();
     }, reconnectDelay);
   };
 
   es.onopen = () => {
     reconnectDelay = 2000;
-    continuousRunning = true;
+    fileStreamConnected = true;
+    setStatus('live');
   };
 
-  continuousRunning = true;
+  fileStreamConnected = true;
 }
 
 /* ── Buttons ── */
@@ -902,7 +850,7 @@ $('rankSearch').addEventListener('input', async (e) => {
     if (digit !== null) {
       $('rankOut').innerHTML = `Décimale <strong>n°${fmt(rank)}</strong> = <span class="bigDigit v${digit}" onclick="scrollToRank(${rank})" title="Cliquer pour localiser">${digit}</span>`;
     } else {
-      $('rankOut').textContent = `Décimale n°${fmt(rank)} non encore calculée (${fmt(available)} disponibles).`;
+      $('rankOut').textContent = `Décimale n°${fmt(rank)} non encore retranscrite (${fmt(available)} disponibles).`;
     }
   } catch (err) {
     if (err.name !== 'AbortError') {
@@ -942,16 +890,17 @@ $('chainSearch').addEventListener('input', async (e) => {
 /* ── Storage stats ── */
 async function updateStorage() {
   try {
-    const { total_digits_stored, last_computed, file_size_kb, source_file } = await (await fetch('/stats')).json();
+    const { total_digits_stored, last_modified, last_computed, file_size_kb, source_file } = await (await fetch('/stats')).json();
     $('storedCount').textContent = total_digits_stored > 0 ? fmt(total_digits_stored) : '—';
-    $('storedDate').textContent = last_computed ? new Date(last_computed).toLocaleString('fr-FR') : '—';
+    const dateSrc = last_modified || last_computed;
+    $('storedDate').textContent = dateSrc ? new Date(dateSrc).toLocaleString('fr-FR') : '—';
     if (source_file) $('storedFile').textContent = source_file;
   } catch {}
 }
 
 /* ── Init ── Auto-connect au chargement ── */
-renderDist(); updateStorage(); loadSnapshots(); setStatus('idle');
-connectContinuous();
+renderDist(); updateStorage(); loadSnapshots(); setStatus('live');
+connectFileStream();
 setInterval(() => { updateStorage(); loadSnapshots(); }, 15000);
 </script>
 </body>
