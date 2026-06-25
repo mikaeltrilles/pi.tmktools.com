@@ -281,6 +281,35 @@ input#customN:focus { border-color:var(--cyan); }
 .toast-bad{ border-color:var(--red);  color:var(--red);  background:rgba(248,113,113,0.08); }
 .toast-info{ border-color:var(--cyan); color:var(--cyan); background:rgba(34,211,238,0.08); }
 
+/* ── Popin dernière décimale ── */
+.last-digit-popin {
+  position:fixed;
+  bottom:1.25rem; left:50%;
+  transform:translateX(-50%) translateY(20px);
+  opacity:0;
+  transition:all .35s cubic-bezier(.22,1,.36,1);
+  z-index:1000;
+  pointer-events:none;
+}
+.last-digit-popin.on { transform:translateX(-50%) translateY(0); opacity:1; }
+.last-digit-popin .card {
+  background:var(--bg-panel); border:1px solid var(--border-glow);
+  border-radius:0.7rem; padding:0.65rem 1.2rem;
+  box-shadow:0 10px 40px rgba(0,0,0,0.5), 0 0 20px rgba(34,211,238,0.1);
+  text-align:center; min-width:160px;
+}
+.last-digit-popin .label {
+  font-size:0.65rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.06em;
+  margin-bottom:0.3rem;
+}
+.last-digit-popin .value {
+  font-family:var(--font-mono); font-size:2rem; font-weight:700; color:var(--cyan);
+  text-shadow:0 0 18px var(--pi-glow); line-height:1;
+}
+.last-digit-popin .rank {
+  font-family:var(--font-mono); font-size:0.7rem; color:var(--text-dim); margin-top:0.35rem;
+}
+
 /* ── Footer ── */
 .footer {
   text-align:center; padding:2.5rem 0 1rem; margin-top:2rem;
@@ -299,6 +328,16 @@ input#customN:focus { border-color:var(--cyan); }
 
 <body>
 <div id="toastBox"></div>
+
+<!-- Popin dernière décimale générée -->
+<div id="lastDigitPopin" class="last-digit-popin">
+  <div class="card">
+    <div class="label">Dernière décimale générée</div>
+    <div class="value" id="lastDigitValue">–</div>
+    <div class="rank" id="lastDigitRank">Rang #–</div>
+  </div>
+</div>
+
 <div class="app">
 
 <!-- ═════════════════════ HEADER ═════════════════════ -->
@@ -488,15 +527,14 @@ function renderDist() {
   const total = Math.max(serverTotalDigits, 1);
   const colors = ['#60a5fa','#34d399','#a78bfa','#f472b6','#fb923c','#facc15','#4ade80','#38bdf8','#e879f9','#f87171'];
   const rows = serverDistribution.map((c, d) => {
-    const pctBar = total > 0 ? (c / total * 100 * 10).toFixed(1) : 0;
     const pctReal = total > 0 ? (c / total * 100) : 0;
-    return { d, c, pctBar, pctReal };
+    return { d, c, pctReal };
   });
   rows.sort((a, b) => b.pctReal - a.pctReal);
-  $('distBox').innerHTML = rows.map(({d, c, pctBar, pctReal}) => `
-    <div class="dist-row">
+  $('distBox').innerHTML = rows.map(({d, c, pctReal}) => `
+    <div class="dist-row" title="${fmt(c)} occurrences">
       <span class="dist-label">${d}</span>
-      <div class="dist-track"><div class="dist-fill" style="width:${Math.min(100, pctBar)}%;background:${colors[d]}"></div></div>
+      <div class="dist-track"><div class="dist-fill" style="width:${Math.min(100, pctReal * 2)}%;background:${colors[d]}"></div></div>
       <span class="dist-count">${pctReal.toFixed(2)}%</span>
     </div>`).join('');
 }
@@ -580,6 +618,7 @@ function appendBlockFast(block, offset, totalFromServer) {
     latestDigitEl.classList.add('latest');
   }
   updateLiveCounterDOM(liveCounterCurrent);
+  scrollToLatest();
 }
 
 function scheduleRenderNextDigit() {
@@ -643,10 +682,17 @@ function renderNextDigit() {
   liveCounterCurrent = rank;
   liveCounterTarget = Math.max(liveCounterTarget, rank);
   updateLiveCounterDOM(rank);
+  showLastDigitPopin(ch, rank);
 
   // Auto-scroll doux à chaque nouvelle décimale
   if (latestDigitEl) {
-    latestDigitEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    latestDigitEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function scrollToLatest() {
+  if (latestDigitEl) {
+    latestDigitEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
   }
 }
 
@@ -780,6 +826,17 @@ function nombreEnLettres(n) {
     return result || 'zéro';
   }
   return conv(n);
+}
+
+let lastDigitPopinTimer = null;
+function showLastDigitPopin(ch, rank) {
+  const popin = $('lastDigitPopin');
+  $('lastDigitValue').textContent = ch;
+  $('lastDigitValue').className = 'value v' + ch;
+  $('lastDigitRank').textContent = `Rang #${fmt(rank)}`;
+  popin.classList.add('on');
+  if (lastDigitPopinTimer) clearTimeout(lastDigitPopinTimer);
+  lastDigitPopinTimer = setTimeout(() => popin.classList.remove('on'), 2200);
 }
 
 function updateLiveCounterDOM(n) {
