@@ -642,6 +642,12 @@ function renderNextDigit() {
   liveCounterTarget = Math.max(liveCounterTarget, rank);
   updateLiveCounterDOM(rank);
   scheduleRenderDist();
+
+  // Auto-scroll doux toutes les 10 décimales (= 1 ligne)
+  if (rowCellCount === 10) {
+    const stage = $('piStage');
+    stage.scrollTo({ top: stage.scrollHeight, behavior: 'smooth' });
+  }
 }
 
 /* ── Reset / Resync ── */
