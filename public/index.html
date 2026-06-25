@@ -875,11 +875,15 @@ function connectFileStream() {
   if (es) { try { es.close(); } catch {} }
   setStatus('live');
 
-  // Charger l'état initial de façon stable (compteur + écriture en lettres)
+  // Charger l'état initial de façon stable (compteur + écriture en lettres + distribution)
   fetch('/continuous-state')
     .then(r => r.json())
     .then(st => {
       serverTotalDigits = st.total_decimals || 0;
+      if (st.distribution && Array.isArray(st.distribution) && st.distribution.length === 10) {
+        serverDistribution = st.distribution;
+      }
+      scheduleRenderDist();
       liveCounterCurrent = serverTotalDigits;
       liveCounterTarget = serverTotalDigits;
       updateLiveCounterDOM(serverTotalDigits);
@@ -891,6 +895,10 @@ function connectFileStream() {
   es.addEventListener('state', e => {
     const st = JSON.parse(e.data);
     serverTotalDigits = st.total_decimals || 0;
+    if (st.distribution && Array.isArray(st.distribution) && st.distribution.length === 10) {
+      serverDistribution = st.distribution;
+    }
+    scheduleRenderDist();
     // Mise à jour immédiate du compteur sans animation
     liveCounterCurrent = serverTotalDigits;
     liveCounterTarget = serverTotalDigits;
@@ -911,6 +919,11 @@ function connectFileStream() {
 
   es.addEventListener('reload', e => {
     const st = JSON.parse(e.data);
+    serverTotalDigits = st.total_decimals || 0;
+    if (st.distribution && Array.isArray(st.distribution) && st.distribution.length === 10) {
+      serverDistribution = st.distribution;
+    }
+    scheduleRenderDist();
     toast(`Nouveau fichier détecté (${fmt(st.total_decimals)} décimales) — rechargement…`, 'info');
     setTimeout(() => window.location.reload(), 1200);
   });
@@ -1030,7 +1043,7 @@ async function updateStorage() {
 }
 
 /* ── Init ── Auto-connect au chargement ── */
-renderDist(); updateStorage(); loadSnapshots(); setStatus('live');
+scheduleRenderDist(); updateStorage(); loadSnapshots(); setStatus('live');
 connectFileStream();
 setInterval(() => { updateStorage(); loadSnapshots(); }, 15000);
 </script>
