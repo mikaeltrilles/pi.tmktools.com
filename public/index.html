@@ -400,7 +400,6 @@ let es = null;
 let allDigits = '3.';
 let count = 0;
 let target = 0;
-let dist = new Array(10).fill(0);
 let currentRow = null;
 let currentRowStartRank = 1;
 let rowCellCount = 0;
@@ -465,7 +464,6 @@ async function scrollToRank(rank) {
       // Vider la grille et afficher le bloc récupéré
       $('piStage').innerHTML = '';
       count = 0; totalClientDigits = 0;
-      dist.fill(0);
       currentRow = null; currentRowStartRank = offset + 1; rowCellCount = 0;
       appendBlock(block, offset);
       // Essayer de retrouver le rang ciblé
@@ -483,13 +481,15 @@ async function scrollToRank(rank) {
   return false;
 }
 
-/* ── Distribution (pourcentage sur le total retranscrit) ── */
+/* ── Distribution (données serveur, calculées sur l’intégralité du fichier) ── */
+let serverDistribution = new Array(10).fill(0);
+
 function renderDist() {
-  const total = Math.max(count, 1);
+  const total = Math.max(serverTotalDigits, 1);
   const colors = ['#60a5fa','#34d399','#a78bfa','#f472b6','#fb923c','#facc15','#4ade80','#38bdf8','#e879f9','#f87171'];
-  const rows = dist.map((c, d) => {
-    const pctBar = total > 0 ? (c/total*100*10).toFixed(1) : 0;
-    const pctReal = total > 0 ? (c/total*100) : 0;
+  const rows = serverDistribution.map((c, d) => {
+    const pctBar = total > 0 ? (c / total * 100 * 10).toFixed(1) : 0;
+    const pctReal = total > 0 ? (c / total * 100) : 0;
     return { d, c, pctBar, pctReal };
   });
   rows.sort((a, b) => b.pctReal - a.pctReal);
@@ -512,13 +512,17 @@ function scheduleRenderDist() {
 }
 
 let firstLoadComplete = false;
+let catchUpRemaining = 0;
 
 function appendBlock(block, offset, totalFromServer = 0) {
-  // Lors du premier rattrapage : on injecte directement les centaines de décimales
-  // sans animation afin d'éviter le bougeoir initial, puis on repasse en mode live.
-  const isCatchUp = !firstLoadComplete && totalFromServer > count + block.length * 2;
-  if (isCatchUp && digitQueue.length === 0) {
+  // Pendant le rattrapage initial, on injecte directement sans animation.
+  const isCatchUp = !firstLoadComplete;
+  if (isCatchUp) {
+    catchUpRemaining += block.length;
     appendBlockFast(block, offset, totalFromServer);
+    if (liveCounterCurrent >= totalFromServer - 1 || catchUpRemaining >= totalFromServer) {
+      firstLoadComplete = true;
+    }
   } else {
     block.split('').forEach((ch, i) => {
       digitQueue.push({ ch, rank: offset + i + 1 });
@@ -561,7 +565,6 @@ function appendBlockFast(block, offset, totalFromServer) {
     cell.appendChild(rk);
     currentRow.appendChild(cell);
 
-    dist[parseInt(ch)]++;
     count++;
     totalClientDigits++;
     rowCellCount++;
@@ -569,7 +572,7 @@ function appendBlockFast(block, offset, totalFromServer) {
     liveCounterCurrent = rank;
     liveCounterTarget = Math.max(liveCounterTarget, rank);
   }
-  // Marquer la dernière décimale du bloc sans animation violente
+  // Marquer la dernière décimale du bloc
   const cells = currentRow ? currentRow.querySelectorAll('.pi-digit') : [];
   if (cells.length) {
     if (latestDigitEl) latestDigitEl.classList.remove('latest');
@@ -577,18 +580,14 @@ function appendBlockFast(block, offset, totalFromServer) {
     latestDigitEl.classList.add('latest');
   }
   updateLiveCounterDOM(liveCounterCurrent);
-  scheduleRenderDist();
-  if (liveCounterCurrent >= totalFromServer - 1) firstLoadComplete = true;
 }
 
 function scheduleRenderNextDigit() {
   if (digitQueue.length === 0) {
     digitRenderTimer = null;
-    firstLoadComplete = true;
     return;
   }
   digitRenderTimer = setTimeout(() => {
-    // Une seule décimale par frame en mode live : calme et lisible
     renderNextDigit();
     scheduleRenderNextDigit();
   }, DIGIT_RENDER_DELAY);
@@ -631,12 +630,11 @@ function renderNextDigit() {
   cell.appendChild(rk);
   currentRow.appendChild(cell);
 
-  // Effet "dernière décimale" subtil
+  // Effet "dernière décimale"
   if (latestDigitEl) latestDigitEl.classList.remove('latest');
   latestDigitEl = digit;
   requestAnimationFrame(() => digit.classList.add('latest'));
 
-  dist[parseInt(ch)]++;
   count++;
   totalClientDigits++;
   rowCellCount++;
@@ -645,9 +643,8 @@ function renderNextDigit() {
   liveCounterCurrent = rank;
   liveCounterTarget = Math.max(liveCounterTarget, rank);
   updateLiveCounterDOM(rank);
-  scheduleRenderDist();
 
-  // Auto-scroll doux à chaque nouvelle décimale pour suivre l'arrivée
+  // Auto-scroll doux à chaque nouvelle décimale
   if (latestDigitEl) {
     latestDigitEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }
@@ -662,7 +659,7 @@ function hardReset() {
   if (es) { try { es.close(); } catch {} es = null; }
   $('piStage').innerHTML = '';
   count = 0; totalClientDigits = 0;
-  dist.fill(0); allDigits = '3.';
+  catchUpRemaining = 0; allDigits = '3.';
   currentRow = null; currentRowStartRank = 1; rowCellCount = 0;
   digitQueue = []; latestDigitEl = null;
   liveCounterCurrent = 0;
@@ -672,6 +669,8 @@ function hardReset() {
   $('liveCounterWords').textContent = '';
   $('liveCounterWrap').style.display = 'none';
   setStatus('idle');
+  serverDistribution = new Array(10).fill(0);
+  serverTotalDigits = 0;
   renderDist();
   $('rankOut').textContent = 'Entrez un rang pour afficher la décimale correspondante.';
   $('chainOut').textContent = 'Entrez une chaîne de chiffres (2–20).';

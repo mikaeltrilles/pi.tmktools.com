@@ -55,6 +55,7 @@ fileEmitter.setMaxListeners(100);
 let piDigits = '3.';
 let piTotal = 0;
 let piLastModified = null;
+let piDistribution = new Array(10).fill(0);
 let fileClients = new Set();
 let fileWatchers = [];
 
@@ -90,28 +91,52 @@ function resolveCompletFile() {
   return COMPLET_FILE; // fallback
 }
 
+function extractPiDigits(content) {
+  // Concatène toutes les lignes non-commentaires, nettoie et extrait 3.xxxxx
+  const raw = content
+    .split('\n')
+    .filter(l => !l.trim().startsWith('#'))
+    .join('')
+    .replace(/\s+/g, '')
+    .replace(/,/g, '');
+
+  // Cherche un motif de décimales de Pi : optionnellement précédé de -, puis 3. ou . suivi de chiffres
+  const match = raw.match(/-?\d*\.\d+/);
+  if (!match) return { digits: '3.', total: 0 };
+
+  let digits = match[0].replace(/^-/, '');
+  if (digits.startsWith('.')) digits = '3' + digits; // .14159 → 3.14159
+  if (!digits.startsWith('3.')) return { digits: '3.', total: 0 };
+
+  const total = Math.max(0, digits.length - 2);
+  return { digits, total };
+}
+
+function extractHeaderTotal(content) {
+  for (const line of content.split('\n')) {
+    if (/^#\s*Nombre total de d[eé]cimales\s*:/i.test(line)) {
+      return parseInt(line.split(':')[1].trim().replace(/,/g, ''), 10) || 0;
+    }
+  }
+  return 0;
+}
+
+function computeDistribution(digits) {
+  const dist = new Array(10).fill(0);
+  const decimals = digits.slice(2);
+  for (const ch of decimals) {
+    const d = parseInt(ch, 10);
+    if (!isNaN(d)) dist[d]++;
+  }
+  return dist;
+}
+
 function readPiFileSync(filePath) {
   try {
     const content = fs.readFileSync(filePath, 'utf8');
-    const lines = content.split('\n');
-    let total = 0;
-    let digits = '3.';
-
-    for (const line of lines) {
-      if (/^#\s*Nombre total de d[eé]cimales\s*:/i.test(line)) {
-        total = parseInt(line.split(':')[1].trim().replace(/,/g, ''), 10) || 0;
-      }
-    }
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('3.') || trimmed.startsWith('-3.') || /^-?\d+\.\d+$/.test(trimmed)) {
-        digits = trimmed.startsWith('-') ? trimmed.slice(1) : trimmed;
-        break;
-      }
-    }
-
-    const effectiveTotal = Math.max(total, digits.length - 2);
+    const headerTotal = extractHeaderTotal(content);
+    const { digits, total } = extractPiDigits(content);
+    const effectiveTotal = headerTotal > 0 ? headerTotal : Math.max(total, digits.length - 2);
     return { digits, total: effectiveTotal, lastModified: fs.statSync(filePath).mtime.toISOString() };
   } catch (e) {
     if (e.code === 'ENOENT') return { digits: '3.', total: 0, lastModified: null };
@@ -127,25 +152,10 @@ async function appendHistory(line) {
 async function readPiFile(filePath) {
   try {
     const content = await fs.promises.readFile(filePath, 'utf8');
-    const lines = content.split('\n');
-    let digits = '3.';
-    let total = 0;
-
-    for (const line of lines) {
-      if (/^#\s*Nombre total de d[eé]cimales\s*:/i.test(line)) {
-        total = parseInt(line.split(':')[1].trim().replace(/,/g, ''), 10) || 0;
-      }
-    }
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('3.') || trimmed.startsWith('-3.') || /^-?\d+\.\d+$/.test(trimmed)) {
-        digits = trimmed.startsWith('-') ? trimmed.slice(1) : trimmed;
-        break;
-      }
-    }
-
-    return { digits, total: Math.max(total, digits.length - 2) };
+    const headerTotal = extractHeaderTotal(content);
+    const { digits, total } = extractPiDigits(content);
+    const effectiveTotal = headerTotal > 0 ? headerTotal : Math.max(total, digits.length - 2);
+    return { digits, total: effectiveTotal };
   } catch (e) {
     if (e.code === 'ENOENT') return { digits: '3.', total: 0 };
     throw e;
@@ -168,14 +178,28 @@ async function refreshPiFromFile() {
 
     const { digits, total } = await readPiComplet();
     const oldTotal = piTotal;
+    const oldDigits = piDigits;
     piDigits = digits;
     piTotal = total;
+    piDistribution = computeDistribution(digits);
+
+    console.log(`📄 ${path.basename(filePath)} mis à jour : ${total.toLocaleString('fr-FR')} décimales`);
+    await appendHistory(`${new Date().toISOString()} | FILE | ${total} décimales depuis ${path.basename(filePath)}\n`);
+    await ensureSnapshots(digits, total);
+
+    // Notifier tous les clients du nouvel état global
+    broadcastFile('state', {
+      running: true,
+      total_decimals: piTotal,
+      source: path.basename(filePath),
+      distribution: piDistribution,
+    });
 
     if (total > oldTotal) {
-      console.log(`📄 ${path.basename(filePath)} mis à jour : ${total.toLocaleString('fr-FR')} décimales (+${total - oldTotal})`);
-      await appendHistory(`${new Date().toISOString()} | FILE | ${total} décimales depuis ${path.basename(filePath)}\n`);
-      await ensureSnapshots(digits, total);
       streamNewFileDigits(oldTotal, total);
+    } else if (total < oldTotal || digits !== oldDigits) {
+      // Le fichier a été réécrit / tronqué : demander au clients de se réinitialiser
+      broadcastFile('reset', { total_decimals: piTotal });
     }
     return true;
   } catch (e) {
@@ -255,6 +279,7 @@ async function loadPiFile() {
   piDigits = digits;
   piTotal = total;
   piLastModified = lastModified;
+  piDistribution = computeDistribution(digits);
   if (total > 0) {
     await ensureSnapshots(digits, total);
     console.log(`📄 Chargement initial : ${total.toLocaleString('fr-FR')} décimales depuis ${path.basename(filePath)}`);
@@ -315,16 +340,17 @@ app.get('/stats', async (req, res) => {
       if (/^#\s*Nombre total de d[eé]cimales\s*:/i.test(l)) total = parseInt(l.split(':')[1].trim().replace(/,/g, ''), 10) || 0;
       if (/^#\s*Derni[eè]re mise [aà] jour\s*:/i.test(l)) last = new Date(l.split(':').slice(1).join(':').trim()).toISOString();
     }
-    const digitsLine = txt.split('\n').find(l => l.trim().startsWith('3.') || l.trim().startsWith('-3.') || /^-?\d+\.\d+$/.test(l.trim()));
-    const effectiveTotal = Math.max(total, digitsLine ? digitsLine.trim().replace(/^-/, '').length - 2 : 0);
+    const { total: computedTotal, digits } = extractPiDigits(txt);
+    const effectiveTotal = total > 0 ? total : Math.max(computedTotal, digits.length - 2);
     res.json({
       total_digits_stored: effectiveTotal,
       last_modified: last || piLastModified,
       file_size_kb: Math.round(st.size / 1024 * 10) / 10,
       source_file: path.basename(filePath),
+      distribution: computeDistribution(digits),
     });
   } catch (e) {
-    if (e.code === 'ENOENT') return res.json({ total_digits_stored: piTotal, last_modified: piLastModified, file_size_kb: 0, source_file: path.basename(filePath) });
+    if (e.code === 'ENOENT') return res.json({ total_digits_stored: piTotal, last_modified: piLastModified, file_size_kb: 0, source_file: path.basename(filePath), distribution: piDistribution });
     res.status(500).json({ error: 'Erreur' });
   }
 });
@@ -344,8 +370,9 @@ app.get('/continuous-state', (req, res) => {
   res.json({
     running: true,
     total_decimals: piTotal,
-    source: 'pi_complet.txt',
+    source: path.basename(resolveCompletFile()),
     last_modified: piLastModified,
+    distribution: piDistribution,
   });
 });
 
@@ -363,13 +390,14 @@ app.get('/stream-continuous', (req, res) => {
   res.write(`event: state\ndata: ${JSON.stringify({
     running: true,
     total_decimals: piTotal,
-    source: 'pi_complet.txt',
+    source: path.basename(resolveCompletFile()),
+    distribution: piDistribution,
   })}\n\n`);
 
-  // Catch-up : envoyer les 1 000 dernières décimales rapidement
+  // Catch-up : envoyer les 5 000 dernières décimales rapidement
   const existing = piDigits.slice(2);
   if (existing.length > 0) {
-    const TAIL = Math.min(1000, existing.length);
+    const TAIL = Math.min(5000, existing.length);
     const tail = existing.slice(-TAIL);
     const offsetStart = existing.length - TAIL;
     for (let i = 0; i < tail.length; i += SSE_BLOCK_SIZE) {
@@ -382,7 +410,7 @@ app.get('/stream-continuous', (req, res) => {
             total: piTotal,
           })}\n\n`);
         } catch { fileClients.delete(res); }
-      }, (i / SSE_BLOCK_SIZE) * 15);
+      }, (i / SSE_BLOCK_SIZE) * 8);
     }
   }
 
