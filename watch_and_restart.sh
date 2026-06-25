@@ -44,7 +44,7 @@ check_running() {
     fi
 
     # Verification de secours par pgrep
-    if pgrep -f "python3 calculate_pi.py" >/dev/null 2&>1; then
+    if pgrep -f "python3 calculate_pi.py" >/dev/null 2>&1; then
         return 0
     fi
 
