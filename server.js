@@ -23,12 +23,16 @@ const HISTORY_FILE = path.join(DATA_DIR, 'pi_history.log');
 const COMPLET_FILE = path.join(DATA_DIR, 'pi_complet.txt');
 const SSE_BLOCK_SIZE = 10; // décimales par événement SSE
 
-const PALIERS = [10, 20, 50, 100, 500, 1000, 5000];
+const PALIERS = [];
 function generatePaliers() {
   const max = Number.MAX_SAFE_INTEGER;
-  for (let p = 1; p <= max / 10; p *= 10) {
-    if (!PALIERS.includes(p)) PALIERS.push(p);
-    if (!PALIERS.includes(5 * p)) PALIERS.push(5 * p);
+  // Paliers de la forme d × 10^n avec d ∈ [1..9] et n >= 1
+  // → 10, 20, …, 90, 100, 200, …, 900, 1000, 2000, …
+  for (let p = 10; p <= max; p *= 10) {
+    for (let d = 1; d <= 9; d++) {
+      const n = d * p;
+      if (n <= max && !PALIERS.includes(n)) PALIERS.push(n);
+    }
   }
   PALIERS.sort((a, b) => a - b);
 }
@@ -280,6 +284,24 @@ function watchPiFile() {
   fileWatchers.push({ close: () => clearInterval(poll) });
 }
 
+/* ── Nettoyage des snapshots obsolètes ── */
+async function cleanupObsoleteSnapshots() {
+  try {
+    const files = await fs.promises.readdir(DATA_DIR);
+    const valid = new Set(PALIERS.map(n => `pi_${n}.txt`));
+    for (const f of files) {
+      const m = f.match(/^pi_(\d+)\.txt$/);
+      if (!m) continue;
+      if (!valid.has(f)) {
+        await fs.promises.unlink(path.join(DATA_DIR, f));
+        console.log(`🗑 Snapshot obsolète supprimé : ${f}`);
+      }
+    }
+  } catch (e) {
+    console.error('Erreur cleanup snapshots :', e.message);
+  }
+}
+
 /* ── Chargement initial ── */
 async function loadPiFile() {
   const filePath = resolveCompletFile();
@@ -288,6 +310,7 @@ async function loadPiFile() {
   piTotal = total;
   piLastModified = lastModified;
   piDistribution = computeDistribution(digits);
+  await cleanupObsoleteSnapshots();
   if (total > 0) {
     await ensureSnapshots(digits, total);
     console.log(`📄 Chargement initial : ${total.toLocaleString('fr-FR')} décimales depuis ${path.basename(filePath)}`);
