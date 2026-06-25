@@ -246,8 +246,14 @@ input#customN:focus { border-color:var(--cyan); }
   font-family:var(--font-mono); font-size:0.72rem;
 }
 .snapshot-row .n { color:var(--cyan); font-weight:700; }
-.snapshot-row .dl { color:var(--text-faint); cursor:pointer; transition:.15s; }
-.snapshot-row .dl:hover { color:var(--cyan); }
+.snapshot-row .dl {
+  font-family:var(--font-body); font-size:0.65rem; font-weight:500;
+  color:var(--text-main); background:var(--bg-panel);
+  border:1px solid var(--border-subtle); border-radius:0.35rem;
+  padding:0.25rem 0.55rem; cursor:pointer; transition:.15s;
+  display:inline-flex; align-items:center; gap:0.25rem;
+}
+.snapshot-row .dl:hover { border-color:var(--cyan); color:var(--cyan); background:rgba(34,211,238,0.08); }
 
 /* Rank search */
 .rank-input {
@@ -749,7 +755,7 @@ async function loadSnapshots() {
         <span style="font-size:0.65rem;color:var(--text-faint);margin-right:0.2rem;">π</span>
         <span class="n">${fmt(s.n)}</span>
         <span style="font-size:0.6rem;color:var(--text-dim);margin-left:auto;padding-right:0.5rem;">décimales</span>
-        <span class="dl" onclick="downloadSnapshot(${s.n})" title="Télécharger">⬇</span>
+        <button class="dl" onclick="downloadSnapshot(${s.n})" title="Télécharger le snapshot π${s.n}">📥 Télécharger</button>
       </div>`).join('');
   } catch { $('snapshotList').innerHTML = ''; }
 }
