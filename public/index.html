@@ -428,7 +428,7 @@ let liveCounterTimer = null;
 let digitQueue = [];
 let digitRenderTimer = null;
 let latestDigitEl = null;
-const DIGIT_RENDER_DELAY = 45; // ms entre deux décimales affichées
+const DIGIT_RENDER_DELAY = 28; // ms entre deux décimales affichées
 
 /* ── Stats client ── */
 let totalClientDigits = 0;       // total reçu pour la vitesse
@@ -541,7 +541,13 @@ function scheduleRenderNextDigit() {
     return;
   }
   digitRenderTimer = setTimeout(() => {
-    renderNextDigit();
+    // Rendre jusqu'à 3 décimales par frame si la file est longue,
+    // pour rester sous la seconde tout en gardant l'effet une par une.
+    const batch = Math.min(3, Math.max(1, Math.floor(digitQueue.length / 20)));
+    for (let k = 0; k < batch; k++) {
+      if (digitQueue.length === 0) break;
+      renderNextDigit();
+    }
     scheduleRenderNextDigit();
   }, DIGIT_RENDER_DELAY);
 }
@@ -600,12 +606,10 @@ function renderNextDigit() {
 
   scheduleRenderDist();
 
-  // Auto-scroll fluide vers la dernière décimale
-  const stage = $('piStage');
-  const cellRect = cell.getBoundingClientRect();
-  const stageRect = stage.getBoundingClientRect();
-  if (cellRect.bottom > stageRect.bottom - 20 || cellRect.top < stageRect.top + 20) {
-    cell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // Auto-scroll : seulement toutes les 10 décimales (= 1 ligne) pour ne pas ralentir
+  if (rowCellCount === 10) {
+    const stage = $('piStage');
+    stage.scrollTop = stage.scrollHeight;
   }
 }
 
