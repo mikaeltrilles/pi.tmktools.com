@@ -400,7 +400,7 @@ input#customN:focus { border-color:var(--cyan); }
 </div>
 
 <footer class="footer">
-  PI Explorer — Algorithme : Chudnovsky (BigInt natif) · Node.js · Express · SSE · pi.tmktools.com
+  PI Explorer — Source : pi_complet.txt uploadé par Raspberry · Node.js · Express · SSE · pi.tmktools.com
 </footer>
 
 </div>
@@ -666,12 +666,13 @@ window.downloadSnapshot = async function(n) {
 };
 
 /* ════════════════════════════════════════════════════════════════════════════
-   CONNEXION SSE CONTINUE — Persistante, auto-reconnexion, accumulation
+   CONNEXION SSE FICHIER — Lecture de pi_complet.txt uploadé par Raspberry
    ════════════════════════════════════════════════════════════════════════════ */
 let reconnectDelay = 2000;
 let serverTotalDigits = 0;
 let reconnectTimer = null;
 let intentionalClose = false;
+let fileSourceMode = true; // true = lecture depuis pi_complet.txt
 
 function nombreEnLettres(n) {
   if (n === 0) return 'zéro';
@@ -806,8 +807,6 @@ function connectContinuous() {
     const { block, offset, total } = JSON.parse(e.data);
     appendBlock(block, offset);
 
-    // Le compteur est animé en synchronisation par renderNextDigit.
-    // On met à jour la cible et la barre de progression sur le total serveur.
     const currentTotal = total || (offset + block.length);
     const goal = visualGoal(currentTotal);
     const pct = goal > 0 ? Math.min(100, Math.round(currentTotal / goal * 100)) : 100;
@@ -820,7 +819,7 @@ function connectContinuous() {
     const { total_decimals } = JSON.parse(e.data);
     serverTotalDigits = total_decimals;
     loadSnapshots();
-    toast(`${fmt(total_decimals)} décimales atteintes`, 'ok');
+    toast(`${fmt(total_decimals)} décimales disponibles`, 'ok');
   });
 
   es.addEventListener('status', e => {
@@ -836,24 +835,23 @@ function connectContinuous() {
     const { total_decimals } = JSON.parse(e.data);
     setStatus('done');
     continuousRunning = false;
-    toast(`${fmt(total_decimals)} décimales calculées`, 'ok');
+    toast(`${fmt(total_decimals)} décimales disponibles`, 'ok');
   });
 
   es.addEventListener('stopped', e => {
     const { total_decimals } = JSON.parse(e.data);
     setStatus('idle');
     continuousRunning = false;
-    toast(`${fmt(total_decimals)} décimales calculées`, 'info');
+    toast(`${fmt(total_decimals)} décimales disponibles`, 'info');
   });
 
   es.onerror = () => {
-    // Ne rien faire ici ; la vraie logique est dans onclose
+    // La reconnexion est gérée dans onclose
   };
 
   es.onclose = () => {
     if (intentionalClose) { intentionalClose = false; return; }
     continuousRunning = false;
-    // Ne reconnecter que si la page est visible
     if (document.hidden) {
       document.addEventListener('visibilitychange', function vis() {
         document.removeEventListener('visibilitychange', vis);
@@ -868,7 +866,7 @@ function connectContinuous() {
   };
 
   es.onopen = () => {
-    reconnectDelay = 2000; // reset backoff
+    reconnectDelay = 2000;
     continuousRunning = true;
   };
 

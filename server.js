@@ -1,93 +1,15 @@
 /**
  * π Explorer — Backend Node.js/Express
  *
- * Calcul continu de π, jamais arrêtable.
- * Reprise automatique depuis data/pi_complet.txt au démarrage.
- * Milestones dynamiques : le calcul ne s arrête jamais.
+ * Mode affichage depuis fichier pi_complet.txt uploadé par un Raspberry.
+ * Le serveur ne calcule plus π ; il lit data/pi_complet.txt et diffuse
+ * les décimales aux clients en temps réel.
  */
 
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
 const { EventEmitter } = require('events');
-
-/* ════════════════════════════════════════════════════════════════════════════
-   WORKER — Chudnovsky BigInt
-   ════════════════════════════════════════════════════════════════════════════ */
-if (!isMainThread) {
-  const { precision } = workerData;
-
-  // Racine carrée entière par méthode de Newton
-  function sqrt(n) {
-    if (n < 0n) return 0n;
-    if (n < 2n) return n;
-    let x = n;
-    let y = (x + 1n) / 2n;
-    while (y < x) {
-      x = y;
-      y = (x + n / x) / 2n;
-    }
-    return x;
-  }
-
-  const extra = 10;
-  const scale = 10n ** BigInt(precision + extra);
-
-  // Constantes Chudnovsky
-  const A = 13591409n;
-  const B = 545140134n;
-  const C = 640320n;
-  const C3 = C * C * C; // 640320^3
-
-  // sqrt(10005) à l'échelle `scale`
-  const sqrt10005 = sqrt(10005n * scale * scale);
-
-  // Calcul de S = Σ (-1)^k * (6k)! * (A + B*k) * scale / [(3k)! * (k!)^3 * C^(3k)]
-  let S = A * scale; // k = 0
-  let k = 1n;
-
-  // Seuil d'arrêt : terme < scale / 10^precision
-  const minTerm = scale / (10n ** BigInt(precision));
-
-  while (true) {
-    const k6 = k * 6n;
-    const k3 = k * 3n;
-
-    // Factorielles (k max ≈ precision/14, donc très petit)
-    let f6 = 1n;
-    for (let i = 2n; i <= k6; i++) f6 *= i;
-    let f3 = 1n;
-    for (let i = 2n; i <= k3; i++) f3 *= i;
-    let fk = 1n;
-    for (let i = 2n; i <= k; i++) fk *= i;
-
-    const L = A + B * k;
-    const num = f6 * L * scale;
-    const den = f3 * (fk ** 3n) * (C3 ** k);
-    const term = num / den;
-
-    if (k % 2n === 1n) {
-      S -= term; // (-1)^k pour k impair
-    } else {
-      S += term; // (-1)^k pour k pair
-    }
-
-    if (term < minTerm) break;
-    k++;
-  }
-
-  // π = (426880 * sqrt(10005)) / S
-  // piScaled ≈ π * scale
-  const piScaled = (426880n * sqrt10005 * scale) / S;
-  // Retirer les chiffres de garde
-  const piFinal = piScaled / (10n ** BigInt(extra));
-
-  const s = piFinal.toString();
-  const result = '3.' + s.slice(1, precision + 1);
-  parentPort.postMessage({ digits: result });
-  return;
-}
 
 /* ════════════════════════════════════════════════════════════════════════════
    MAIN THREAD — Serveur Express
@@ -99,9 +21,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'pi_digits.txt');
 const HISTORY_FILE = path.join(DATA_DIR, 'pi_history.log');
 const COMPLET_FILE = path.join(DATA_DIR, 'pi_complet.txt');
-const BLOCK_SIZE = 10;
-const BLOCK_DELAY_MS = 20;
-const CATCHUP_BLOCK = 100;
+const SSE_BLOCK_SIZE = 10; // décimales par événement SSE
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -116,66 +36,32 @@ app.use((req, res, next) => {
 });
 
 /* ════════════════════════════════════════════════════════════════════════════
-   MODE CONTINU — État global + EventEmitter
+   MODE FICHIER — Lecture de pi_complet.txt + SSE
    ════════════════════════════════════════════════════════════════════════════ */
-const continuousEmitter = new EventEmitter();
-continuousEmitter.setMaxListeners(50);
+const fileEmitter = new EventEmitter();
+fileEmitter.setMaxListeners(100);
 
-let continuousState = {
-  running: false,
-  digits: '3.',
-  milestoneIdx: -1,
-  startTime: null,
-  clients: new Set(),
-};
+let piDigits = '3.';
+let piTotal = 0;
+let piLastModified = null;
+let fileClients = new Set();
+let fileWatchers = [];
 
 function snapshotPath(n) {
   return path.join(DATA_DIR, `pi_${n}.txt`);
 }
 
-/* Paliers intéressants : 100, 500, 1 000, 5 000, 10 000, 50 000, 100 000…
-   (tout nombre ≥ 100 qui commence par 1 ou 5 suivi uniquement de 0) */
-function isInterestingMilestone(n) {
-  return /^[15]0+$/.test(n.toString());
-}
-
-async function writeSnapshot(digits, n) {
-  const header = [
-    `# Pi Snapshot made with ♥ by PI Explorer`,
-    `# Généré le : ${new Date().toISOString()}`,
-    `# Nombre de décimales : ${digits.length - 2}`,
-    '# Algorithme : Chudnovsky (BigInt)',
-    '#',
-    digits,
-    ''
-  ].join('\n');
-  await fs.promises.writeFile(snapshotPath(n), header, 'utf8');
-}
-
-async function writeComplet(digits) {
-  const header = [
-    '# Pi Complet made with ♥ by PI Explorer',
-    `# Dernière mise à jour : ${new Date().toISOString()}`,
-    `# Nombre total de décimales : ${digits.length - 2}`,
-    '# Algorithme : Chudnovsky (BigInt)',
-    '#',
-    digits,
-    ''
-  ].join('\n');
-  await fs.promises.writeFile(COMPLET_FILE, header, 'utf8');
-}
-
 async function appendHistory(line) {
-  await fs.promises.appendFile(HISTORY_FILE, line, 'utf8');
+  await fs.promises.appendFile(HISTORY_FILE, line, 'utf8').catch(() => {});
 }
 
-/* ── Reprise depuis le fichier complet ── */
-async function loadContinuousStateFromDisk() {
+/* ── Lecture du fichier pi_complet.txt ── */
+async function readPiComplet() {
   try {
     const content = await fs.promises.readFile(COMPLET_FILE, 'utf8');
     const lines = content.split('\n');
-    let total = 0;
     let digits = '3.';
+    let total = 0;
 
     for (const line of lines) {
       if (line.startsWith('# Nombre total de décimales :')) {
@@ -191,99 +77,88 @@ async function loadContinuousStateFromDisk() {
       }
     }
 
-    if (digits.length > 2) {
-      continuousState.digits = digits;
-      // milestoneIdx = nombre de pas déjà effectués
-      continuousState.milestoneIdx = Math.floor(total / STEP);
-      console.log(`⏮️  Reprise depuis disque : ${total.toLocaleString('fr-FR')} décimales (pas ${continuousState.milestoneIdx})`);
-      await appendHistory(`${new Date().toISOString()} | RESUME | ${total} décimales restaurées depuis pi_complet.txt\n`);
-    }
+    return { digits, total };
   } catch (e) {
-    if (e.code === 'ENOENT') {
-      console.log('🆕 Nouveau démarrage — aucun pi_complet.txt trouvé');
-    } else {
-      console.error('Erreur lecture pi_complet.txt :', e.message);
-    }
+    if (e.code === 'ENOENT') return { digits: '3.', total: 0 };
+    throw e;
   }
 }
 
-/* ── Broadcast SSE ── */
-function broadcast(event, payload) {
+/* ── Mise à jour de l'état depuis le fichier ── */
+async function refreshPiFromFile() {
+  try {
+    const st = await fs.promises.stat(COMPLET_FILE);
+    const mtime = st.mtime.toISOString();
+    if (piLastModified === mtime) return false; // pas de changement
+    piLastModified = mtime;
+
+    const { digits, total } = await readPiComplet();
+    const oldTotal = piTotal;
+    piDigits = digits;
+    piTotal = total;
+
+    if (total > oldTotal) {
+      console.log(`📄 pi_complet.txt mis à jour : ${total.toLocaleString('fr-FR')} décimales (+${total - oldTotal})`);
+      await appendHistory(`${new Date().toISOString()} | FILE | ${total} décimales depuis pi_complet.txt\n`);
+      streamNewFileDigits(oldTotal, total);
+    }
+    return true;
+  } catch (e) {
+    console.error('Erreur refreshPiFromFile :', e.message);
+    return false;
+  }
+}
+
+/* ── Broadcast SSE aux clients fichier ── */
+function broadcastFile(event, payload) {
   const data = `event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;
-  for (const res of continuousState.clients) {
-    try { res.write(data); } catch { continuousState.clients.delete(res); }
+  for (const res of fileClients) {
+    try { res.write(data); } catch { fileClients.delete(res); }
   }
 }
 
-/* ── Stream décimales aux clients ── */
-function streamDecimalsToClients(decimals, offsetStart, total, milestone, isLive = true, milestoneStart = offsetStart) {
-  const chunkSize = isLive ? BLOCK_SIZE : CATCHUP_BLOCK;
-  const delay = isLive ? BLOCK_DELAY_MS : 20;
+/* ── Streamer les nouvelles décimales depuis le fichier ── */
+function streamNewFileDigits(from, to) {
+  const decimals = piDigits.slice(2 + from, 2 + to);
+  if (!decimals) return;
 
-  let offset = offsetStart;
-  let idx = 0;
-
-  const sendNext = () => {
-    if (!continuousState.running && isLive) return;
-    const block = decimals.slice(idx, idx + chunkSize);
-    if (!block) return;
-    broadcast('digits', { block, offset, total, milestone, milestoneStart });
-    idx += block.length;
-    offset += block.length;
-    if (idx < decimals.length) {
-      setTimeout(sendNext, delay);
-    }
-  };
-
-  sendNext();
+  for (let offset = from; offset < to; offset += SSE_BLOCK_SIZE) {
+    const block = decimals.slice(offset - from, offset - from + SSE_BLOCK_SIZE);
+    setTimeout(() => {
+      broadcastFile('digits', { block, offset, total: piTotal });
+    }, ((offset - from) / SSE_BLOCK_SIZE) * 25);
+  }
 }
 
-const STEP = 100; // calcul par pas de 100 décimales pour un flux ultra-fluide
+/* ── Surveillance du fichier ── */
+function watchPiFile() {
+  // fs.watch est capricieux sur certains FS : on combine avec un polling
+  try {
+    const watcher = fs.watch(COMPLET_FILE, async (eventType) => {
+      if (eventType === 'change') await refreshPiFromFile();
+    });
+    fileWatchers.push(watcher);
+  } catch (e) {
+    console.warn('fs.watch indisponible sur pi_complet.txt :', e.message);
+  }
 
-/* ── Logique du calcul par pas (flux continu sans attente) ── */
-async function runNextMilestone() {
-  if (!continuousState.running) return;
+  // Polling de secours toutes les 2 secondes
+  const poll = setInterval(() => refreshPiFromFile(), 2000);
+  fileWatchers.push({ close: () => clearInterval(poll) });
+}
 
-  const prevLen = continuousState.digits.length - 2;
-  const target = prevLen + STEP;
-
-  broadcast('status', { status: 'computing', milestone: target, current_decimals: prevLen });
-
-  const worker = new Worker(__filename, { workerData: { precision: target } });
-
-  worker.on('message', async ({ digits }) => {
-    continuousState.digits = digits;
-    continuousState.milestoneIdx++;
-
-    const newDec = digits.slice(2 + prevLen);
-    const total = digits.length - 2;
-
-    // Streamer les nouvelles décimales aux clients immédiatement
-    streamDecimalsToClients(newDec, prevLen, total, target, true, prevLen);
-
-    // Snapshots aux paliers intéressants : 100, 500, 1000, 5000, 10000, 50000…
-    if (isInterestingMilestone(target)) await writeSnapshot(digits, target);
-    await writeComplet(digits);
-    await appendHistory(`${new Date().toISOString()} | +${STEP} → ${target} | ${total} décimales\n`);
-
-    // Notifier
-    setTimeout(() => {
-      broadcast('milestone', { milestone: target, total_decimals: total });
-    }, Math.ceil(newDec.length / BLOCK_SIZE) * BLOCK_DELAY_MS + 100);
-
-    worker.terminate().catch(() => {});
-
-    // Suite immédiate — pas de pause longue
-    setTimeout(() => runNextMilestone(), 400);
-  });
-
-  worker.on('error', (err) => {
-    console.error('Continuous worker error :', err);
-    broadcast('error', { message: err.message });
-    worker.terminate().catch(() => {});
-    // Retry après 5s — le calcul ne doit jamais s arrêter
-    setTimeout(() => runNextMilestone(), 5000);
-  });
+/* ── Chargement initial ── */
+async function loadPiFile() {
+  const { digits, total } = await readPiComplet();
+  piDigits = digits;
+  piTotal = total;
+  if (total > 0) {
+    const st = await fs.promises.stat(COMPLET_FILE);
+    piLastModified = st.mtime.toISOString();
+    console.log(`📄 Chargement initial : ${total.toLocaleString('fr-FR')} décimales depuis pi_complet.txt`);
+  } else {
+    console.log('🆕 Aucun pi_complet.txt trouvé — en attente d upload Raspberry');
+  }
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -339,45 +214,32 @@ app.get('/stats', async (req, res) => {
     }
     res.json({ total_digits_stored: total, last_computed: last, file_size_kb: Math.round(st.size / 1024 * 10) / 10 });
   } catch (e) {
-    if (e.code === 'ENOENT') return res.json({ total_digits_stored: 0, last_computed: null, file_size_kb: 0 });
+    if (e.code === 'ENOENT') return res.json({ total_digits_stored: piTotal, last_computed: piLastModified, file_size_kb: 0 });
     res.status(500).json({ error: 'Erreur' });
   }
 });
 
 /* ════════════════════════════════════════════════════════════════════════════
-   ROUTES MODE CONTINU
+   ROUTES MODE FICHIER
    ════════════════════════════════════════════════════════════════════════════ */
 
-/* Démarrer le calcul continu (appelé auto au boot, mais route dispo) */
-app.post('/start-continuous', (req, res) => {
-  if (continuousState.running) {
-    return res.json({ started: false, reason: 'Déjà en cours', state: continuousState });
-  }
-  continuousState.running = true;
-  continuousState.startTime = Date.now();
-  runNextMilestone();
-  res.json({ started: true });
+/* Forcer un refresh manuel du fichier */
+app.post('/refresh-file', async (req, res) => {
+  const ok = await refreshPiFromFile();
+  res.json({ refreshed: ok, total_digits: piTotal });
 });
 
-/* Arrêter — route gardée pour admin d urgence, mais le calcul redémarre auto */
-app.post('/stop-continuous', (req, res) => {
-  continuousState.running = false;
-  broadcast('stopped', { total_decimals: continuousState.digits.length - 2 });
-  res.json({ stopped: true, total_decimals: continuousState.digits.length - 2 });
-});
-
-/* État du calcul continu */
+/* État du fichier pi_complet.txt */
 app.get('/continuous-state', (req, res) => {
-  const total = continuousState.digits.length - 2;
   res.json({
-    running: continuousState.running,
-    total_decimals: total,
-    next_target: total + STEP,
-    elapsed_ms: continuousState.startTime ? Date.now() - continuousState.startTime : null,
+    running: true,
+    total_decimals: piTotal,
+    source: 'pi_complet.txt',
+    last_modified: piLastModified,
   });
 });
 
-/* SSE continu — rattrapage puis live */
+/* SSE fichier — rattrapage puis live */
 app.get('/stream-continuous', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -385,40 +247,48 @@ app.get('/stream-continuous', (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
 
-  continuousState.clients.add(res);
+  fileClients.add(res);
 
-  const total = continuousState.digits.length - 2;
   // État initial
   res.write(`event: state\ndata: ${JSON.stringify({
-    running: continuousState.running,
-    total_decimals: total,
-    next_target: total + STEP,
+    running: true,
+    total_decimals: piTotal,
+    source: 'pi_complet.txt',
   })}\n\n`);
 
-  // Catch-up limité aux 1 000 dernières décimales pour que la grille
-  // Mini catch-up des 1 000 dernières décimales pour que la grille ne soit pas vide
-  const existing = continuousState.digits.slice(2);
+  // Catch-up : envoyer les 1 000 dernières décimales rapidement
+  const existing = piDigits.slice(2);
   if (existing.length > 0) {
-    const TAIL = 1000;
+    const TAIL = Math.min(1000, existing.length);
     const tail = existing.slice(-TAIL);
-    const total = existing.length;
-    const offsetStart = total - tail.length;
-    streamDecimalsToClients(tail, offsetStart, total, total + STEP, false, offsetStart);
+    const offsetStart = existing.length - TAIL;
+    for (let i = 0; i < tail.length; i += SSE_BLOCK_SIZE) {
+      const block = tail.slice(i, i + SSE_BLOCK_SIZE);
+      setTimeout(() => {
+        try {
+          res.write(`event: digits\ndata: ${JSON.stringify({
+            block,
+            offset: offsetStart + i,
+            total: piTotal,
+          })}\n\n`);
+        } catch { fileClients.delete(res); }
+      }, (i / SSE_BLOCK_SIZE) * 15);
+    }
   }
 
-  // Heartbeat toutes les 30s pour garder la connexion SSE ouverte
+  // Heartbeat toutes les 30s
   const ping = setInterval(() => {
     try {
       res.write(':ping\n\n');
     } catch {
       clearInterval(ping);
-      continuousState.clients.delete(res);
+      fileClients.delete(res);
     }
   }, 30000);
 
   req.on('close', () => {
     clearInterval(ping);
-    continuousState.clients.delete(res);
+    fileClients.delete(res);
   });
 });
 
@@ -470,7 +340,7 @@ app.get('/digit', (req, res) => {
   const rank = parseInt(req.query.rank, 10);
   if (!rank || rank < 1) return res.status(400).json({ error: 'Rang invalide' });
   const idx = rank + 1; // skip "3."
-  const digits = continuousState.digits;
+  const digits = piDigits;
   if (idx >= digits.length) {
     return res.json({ rank, digit: null, available: digits.length - 2 });
   }
@@ -482,23 +352,22 @@ app.get('/digits-around', (req, res) => {
   const rank = parseInt(req.query.rank, 10);
   if (!rank || rank < 1) return res.status(400).json({ error: 'Rang invalide' });
 
-  const digits = continuousState.digits;
+  const digits = piDigits;
   const total = digits.length - 2;
   if (rank > total) {
-    return res.json({ rank, block: null, offset: null, total, message: 'Rang non encore calculé' });
+    return res.json({ rank, block: null, offset: null, total, message: 'Rang non encore disponible' });
   }
 
   const RADIUS = 500;
   let start = Math.max(0, rank - RADIUS);
   let end = Math.min(total, rank + RADIUS);
-  // Aligner start sur multiple de 10 pour que les row-labels soient cohérents
   start = Math.floor(start / 10) * 10;
 
   const block = digits.slice(2 + start, 2 + end);
   res.json({ rank, block, offset: start, total });
 });
 
-/* Recherche d'une chaîne de chiffres dans les snapshots et la mémoire */
+/* Recherche d'une chaîne de chiffres dans pi_complet.txt */
 app.get('/search-chain', async (req, res) => {
   const q = (req.query.q || '').trim();
   if (!q || q.length < 2 || q.length > 20 || !/^\d+$/.test(q)) {
@@ -506,10 +375,9 @@ app.get('/search-chain', async (req, res) => {
   }
 
   const positions = [];
-  const digits = continuousState.digits;
-  const totalMemory = digits.length - 2;
+  const digits = piDigits;
+  const totalAvailable = digits.length - 2;
 
-  // 1. Chercher dans la mémoire live (continuousState.digits)
   if (digits.length > 2) {
     const decPart = digits.slice(2);
     let idx = decPart.indexOf(q);
@@ -519,63 +387,21 @@ app.get('/search-chain', async (req, res) => {
     }
   }
 
-  // 2. Chercher dans les snapshots sur disque
-  try {
-    const files = await fs.promises.readdir(DATA_DIR);
-    const snapFiles = files
-      .filter(f => f.startsWith('pi_') && f.endsWith('.txt') && f !== 'pi_digits.txt' && f !== 'pi_complet.txt' && f !== 'pi_history.log')
-      .sort((a, b) => {
-        const na = parseInt(a.replace('pi_', '').replace('.txt', ''), 10);
-        const nb = parseInt(b.replace('pi_', '').replace('.txt', ''), 10);
-        return na - nb;
-      });
-
-    for (const f of snapFiles) {
-      const n = parseInt(f.replace('pi_', '').replace('.txt', ''), 10);
-      // Ne relire que si pas déjà couvert par la mémoire live
-      if (n <= totalMemory) continue;
-      try {
-        const content = await fs.promises.readFile(path.join(DATA_DIR, f), 'utf8');
-        const lines = content.split('\n');
-        let fileDigits = '';
-        for (const line of lines) {
-          const t = line.trim();
-          if (t && !t.startsWith('#')) { fileDigits = t; break; }
-        }
-        if (fileDigits.length > 2) {
-          const decPart = fileDigits.slice(2);
-          let idx = decPart.indexOf(q);
-          while (idx !== -1) {
-            positions.push(idx + 1);
-            idx = decPart.indexOf(q, idx + 1);
-          }
-        }
-      } catch { /* ignore unreadable snapshot */ }
-    }
-  } catch { /* ignore dir error */ }
-
-  // Dédoublonner et trier
   const unique = [...new Set(positions)].sort((a, b) => a - b);
 
   res.json({
     query: q,
     positions: unique,
-    total_checked: Math.max(totalMemory, 0),
+    total_checked: Math.max(totalAvailable, 0),
     count: unique.length,
   });
 });
 
-/* ── Démarrage + auto-start continu ── */
+/* ── Démarrage — mode lecture fichier ── */
 app.listen(PORT, async () => {
   console.log(`π Explorer en ligne : http://localhost:${PORT}`);
-  console.log(`  Pas de calcul : +${STEP.toLocaleString('fr-FR')} décimales par cycle`);
+  console.log('  Mode : affichage depuis pi_complet.txt (uploadé par le Raspberry)');
 
-  // Reprendre depuis le disque si pi_complet.txt existe
-  await loadContinuousStateFromDisk();
-
-  // Le calcul démarre automatiquement et ne s arrête jamais
-  continuousState.running = true;
-  continuousState.startTime = Date.now();
-  runNextMilestone();
-  console.log('▶️  Calcul continu auto-démarré — interruption impossible');
+  await loadPiFile();
+  watchPiFile();
 });
