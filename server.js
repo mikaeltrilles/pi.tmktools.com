@@ -171,6 +171,12 @@ async function readPiComplet() {
   return readPiFile(filePath);
 }
 
+/* ── Forcer la rescan immédiate du fichier (appelée par /refresh-file) ── */
+async function forceRescanPiFile() {
+  piLastModified = null;
+  return refreshPiFromFile();
+}
+
 /* ── Mise à jour de l'état depuis le fichier ── */
 async function refreshPiFromFile() {
   const filePath = resolveCompletFile();
@@ -392,7 +398,7 @@ app.get('/stats', async (req, res) => {
 
 /* Forcer un refresh manuel du fichier */
 app.post('/refresh-file', async (req, res) => {
-  const ok = await refreshPiFromFile();
+  const ok = await forceRescanPiFile();
   res.json({ refreshed: ok, total_digits: piTotal });
 });
 

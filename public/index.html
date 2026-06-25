@@ -715,11 +715,12 @@ function scrollToLatest() {
 }
 
 /* ── Reset / Resync ── */
-function hardReset() {
+async function hardReset() {
   intentionalClose = true;
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   if (digitRenderTimer) { clearTimeout(digitRenderTimer); digitRenderTimer = null; }
   if (liveCounterTimer) { clearInterval(liveCounterTimer); liveCounterTimer = null; }
+  if (window._statePoll) { clearInterval(window._statePoll); window._statePoll = null; }
   if (es) { try { es.close(); } catch {} es = null; }
   $('piStage').innerHTML = '';
   count = 0; totalClientDigits = 0;
@@ -739,6 +740,13 @@ function hardReset() {
   $('rankOut').textContent = 'Entrez un rang pour afficher la décimale correspondante.';
   $('chainOut').textContent = 'Entrez une chaîne de chiffres (2–20).';
   reconnectDelay = 2000;
+
+  // Demander au serveur de rescanner immédiatement le fichier pi_complet.txt
+  toast('Resynchronisation avec le fichier π…', 'info');
+  try {
+    await fetch('/refresh-file', { method: 'POST' });
+  } catch {}
+
   connectFileStream();
 }
 
