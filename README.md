@@ -283,6 +283,47 @@ REMOTE_HOST = "109.234.165.174"
 REMOTE_PATH = "/home/vote1550/pi.tmktools.com/data/pi_complet.txt"
 ```
 
+## 💾 Historisation des checkpoints sur le serveur
+
+A chaque palier, le checkpoint local `pi_checkpoint.json` est egalement upload sur le serveur de production :
+
+```text
+vote1550@109.234.165.174:/home/vote1550/pi.tmktools.com/data/pi_checkpoint.json
+```
+
+Une copie historisee est conservee sous la forme :
+
+```text
+pi_checkpoint_YYYYMMDD_HHMMSS_<DECIMALES>dec.json
+```
+
+Exemple :
+
+```text
+pi_checkpoint_20260625_143501_200000dec.json
+pi_checkpoint_20260625_143528_201133dec.json
+```
+
+Par defaut, les **10 derniers checkpoints historises** sont conserves sur le serveur ; les plus anciens sont supprimes automatiquement.
+
+### Restauration automatique depuis le serveur
+
+Si le checkpoint local est absent, vide ou invalide, le programme essaie automatiquement de restaurer le calcul depuis :
+
+1. Le checkpoint principal distant `pi_checkpoint.json`
+2. Puis le checkpoint historique distant le plus recent avec le plus de decimales
+3. Puis le plus gros fichier `.txt` present dans le dossier distant
+4. Puis les backups locaux
+5. Enfin le fichier local `pi_complet.txt`
+
+Ainsi, en cas de crash, de rollback ou de reinstallation, le calcul reprend au maximum de decimales disponibles, sans recommencer a zero.
+
+### Voir les checkpoints distants
+
+```bash
+ssh vote1550@109.234.165.174 "ls -lh /home/vote1550/pi.tmktools.com/data/pi_checkpoint*.json"
+```
+
 ## 🗑️ Rotation des backups locaux
 
 Seuls les **3 derniers backups** sont conservés dans `/home/mika/Documents`. Les noms suivent le format :
