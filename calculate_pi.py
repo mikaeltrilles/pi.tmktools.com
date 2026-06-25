@@ -148,17 +148,24 @@ class ChudnovskyEngine:
         """
         Ajoute m termes a la somme partielle, de k=n a k=n+m-1.
         Met a jour self.n, self.P, self.M, self.L.
+
+        La somme partielle est maintenue sous la forme :
+            S_n = P_n / (-K3_CUBE)^n
+        avec P_n = sum_{k=0}^{n-1} (-1)^k * M_k * L_k * (-K3_CUBE)^{n-k}.
+
+        Pour ajouter m termes :
+            P_{n+m} = (-K3_CUBE)^m * P_n + S_part
+        ou S_part = (-1)^{n+m} * sum_{j=0}^{m-1} M_{n+j} * L_{n+j} * K3_CUBE^{m-j}.
         """
         if m <= 0:
             return
 
-        D_m = K3_CUBE ** m
-        if self.n % 2 == 0:
-            sign = 1
-        else:
-            sign = -1
+        # Signe constant pour tous les nouveaux termes : (-1)^(n+m)
+        sign = 1 if (self.n + m) % 2 == 0 else -1
 
-        D_current = D_m
+        # D_current = K3_CUBE^{m-j} au fil des iterations
+        D_current = K3_CUBE ** m
+
         S_part = 0
         M = self.M
         L = self.L
@@ -171,13 +178,12 @@ class ChudnovskyEngine:
                 D_current //= K3_CUBE
 
             S_part += sign * M * L * D_current
-            sign = -sign
 
             if progress_callback and j % 50 == 0:
                 progress_callback(self.estimate_digits())
 
         # Mise a jour de l'etat
-        self.P = self.P * D_m + S_part
+        self.P = self.P * ((-K3_CUBE) ** m) + S_part
         self.M = M
         self.L = L
         self.n += m
@@ -193,13 +199,8 @@ def evaluate_pi(engine: ChudnovskyEngine, digits: int) -> str:
 
     # pi = C * sqrt(10005) / S_n
     #    = C * sqrt(10005) * (-K3_CUBE)^n / P_n
-    if engine.n % 2 == 0:
-        denom = engine.P
-    else:
-        denom = -engine.P
-
-    # On travaille avec la scale : multiplier numerateur et denominateur par scale
-    pi_scaled = (numerator * scale * (K3_CUBE ** engine.n)) // denom
+    # Le signe de (-K3_CUBE)^n est géré automatiquement par l'exponentiation.
+    pi_scaled = (numerator * scale * ((-K3_CUBE) ** engine.n)) // engine.P
     pi_str = str(pi_scaled)[:-EXTRA]
     return f"{pi_str[0]}.{pi_str[1:]}"
 
