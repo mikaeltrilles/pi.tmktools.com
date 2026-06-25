@@ -352,6 +352,42 @@ sudo systemctl enable picalc.service
 sudo systemctl start picalc.service
 ```
 
+## 👁️ Watchdog automatique
+
+Un script de surveillance `watch_and_restart.sh` est fourni pour garantir que le calcul tourne en permanence.
+
+### Fonctionnement
+
+- Toutes les **5 minutes**, cron exécute le watchdog.
+- Le watchdog vérifie si `calculate_pi.py` est actif via `pi_calculate.pid` et `pgrep`.
+- Si le processus est mort ou absent :
+  - il supprime les locks/pid obsolètes,
+  - il tue d'éventuels processus fantômes,
+  - il relance `run_background.sh`.
+
+### Installation
+
+Elle a été faite automatiquement via crontab :
+
+```text
+*/5 * * * * cd /home/mika/Public/PIpi4 && bash watch_and_restart.sh >> /home/mika/Public/PIpi4/pi_watchdog.log 2>&1
+```
+
+### Surveillance manuelle
+
+Pour voir l'activité du watchdog :
+
+```bash
+tail -f /home/mika/Public/PIpi4/pi_watchdog.log
+```
+
+Pour forcer un test immédiat :
+
+```bash
+cd /home/mika/Public/PIpi4
+bash watch_and_restart.sh
+```
+
 ## 🛠️ Dépannage
 
 ### Le programme ne démarre pas
