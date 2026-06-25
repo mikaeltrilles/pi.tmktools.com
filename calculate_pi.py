@@ -20,6 +20,8 @@ recalculer la serie depuis le debut a chaque palier.
 Auteur : PI RasberryPi4
 """
 
+
+# Fuseau horaire Europe/Paris pour les logs et l'en-tete du fichier π
 import os
 import sys
 import shutil
@@ -28,6 +30,7 @@ import json
 import datetime
 import argparse
 import subprocess
+import unicodedata
 from pathlib import Path
 from typing import Optional
 
@@ -347,7 +350,9 @@ def parse_digits_from_header(path: Path) -> Optional[int]:
     try:
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
-                lower = line.lower()
+                # Normalise pour ignorer les accents (e != e)
+                normalized = unicodedata.normalize("NFKD", line).encode("ascii", "ignore").decode("ascii")
+                lower = normalized.lower()
                 if "nombre total de" in lower and "decimales" in lower:
                     digits_str = line.split(":")[-1].strip()
                     digits_str = digits_str.replace(" ", "").replace(",", "").replace(".", "")
@@ -392,21 +397,31 @@ def download_remote_file(remote_path: str, local_path: Path) -> bool:
         return False
 
 
-def list_remote_txt_files() -> list[str]:
+def list_remote_txt_files() -> list[tuple[int, str]]:
     """
-    Liste les fichiers .txt presents dans le dossier distant.
+    Liste les fichiers .txt presents dans le dossier distant, avec leur taille,
+    tries par taille decroissante.
     """
     try:
         remote_dir = REMOTE_PATH.rsplit("/", 1)[0]
         result = subprocess.run(
             ["ssh", "-o", "BatchMode=yes", f"{REMOTE_USER}@{REMOTE_HOST}",
-             f"ls -1 {remote_dir}/*.txt 2>/dev/null"],
+             f"ls -l {remote_dir}/*.txt 2>/dev/null | awk '{{print $5, $NF}}'"],
             capture_output=True,
             text=True,
             timeout=60,
         )
         if result.returncode == 0:
-            return [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
+            files = []
+            for line in result.stdout.strip().splitlines():
+                parts = line.strip().split(maxsplit=1)
+                if len(parts) == 2:
+                    try:
+                        size = int(parts[0])
+                        files.append((size, parts[1]))
+                    except ValueError:
+                        continue
+            return sorted(files, reverse=True)
     except Exception:
         return []
     return []
@@ -415,7 +430,7 @@ def list_remote_txt_files() -> list[str]:
 def find_best_snapshot() -> tuple[Optional[Path], int]:
     """
     Cherche le meilleur snapshot disponible :
-    1. Tous les fichiers .txt du dossier distant sur le serveur o2switch
+    1. Les plus gros fichiers .txt du dossier distant sur le serveur o2switch
     2. Backups locaux dans BACKUP_DIR
     3. Fichier local OUTPUT_FILE
 
@@ -424,10 +439,11 @@ def find_best_snapshot() -> tuple[Optional[Path], int]:
     best_path: Optional[Path] = None
     best_digits = 0
 
-    # 1. Snapshots distants
+    # 1. Snapshots distants (tries par taille decroissante)
     try:
         remote_files = list_remote_txt_files()
-        for remote_file in remote_files:
+        for size, remote_file in remote_files:
+            _ = size  # taille deja utilisee pour le tri
             tmp_remote = OUTPUT_FILE.with_suffix(f".remote_tmp_{Path(remote_file).name}")
             if download_remote_file(remote_file, tmp_remote):
                 remote_digits = parse_digits_from_header(tmp_remote)
