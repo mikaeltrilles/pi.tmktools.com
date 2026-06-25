@@ -170,9 +170,19 @@ input#customN:focus { border-color:var(--cyan); }
   transition: opacity .1s ease;
 }
 .pi-digit.new {
-  animation: popIn .18s ease both;
+  animation: popIn .22s ease both;
 }
-@keyframes popIn { from { opacity:0.6; transform:translateY(1px); } to { opacity:1; transform:translateY(0); } }
+@keyframes popIn { from { opacity:0.5; transform:translateY(2px); } to { opacity:1; transform:translateY(0); } }
+
+/* Décimale active : petite mise en évidence animée */
+.pi-digit.latest {
+  z-index: 10;
+  animation: latestPulse .55s ease forwards;
+}
+@keyframes latestPulse {
+  0% { transform: scale(1.18); filter: brightness(1.5) saturate(1.3); }
+  100% { transform: scale(1); filter: brightness(1) saturate(1); }
+}
 
 .pi-digit.v0 { color:#60a5fa; text-shadow:0 0 6px rgba(96,165,250,0.3); }
 .pi-digit.v1 { color:#34d399; text-shadow:0 0 6px rgba(52,211,153,0.3); }
@@ -192,12 +202,6 @@ input#customN:focus { border-color:var(--cyan); }
 .pi-cell:hover .pi-rank { color:var(--cyan); }
 .pi-cell:hover .pi-digit { transform:scale(1.35); z-index:5; }
 
-/* Décimale active : légère surbrillance, pas de scale */
-.pi-digit.latest {
-  z-index: 10;
-  filter: brightness(1.2) saturate(1.1);
-  transition: filter .25s ease;
-}
 
 .century-rule { display:flex; align-items:center; gap:0.75rem; margin:0.6rem 0; opacity:.7; }
 .century-rule .line { flex:1; height:1px; background:linear-gradient(90deg, transparent, var(--cyan-dim), transparent); }
@@ -643,10 +647,9 @@ function renderNextDigit() {
   updateLiveCounterDOM(rank);
   scheduleRenderDist();
 
-  // Auto-scroll doux toutes les 10 décimales (= 1 ligne)
-  if (rowCellCount === 10) {
-    const stage = $('piStage');
-    stage.scrollTo({ top: stage.scrollHeight, behavior: 'smooth' });
+  // Auto-scroll doux à chaque nouvelle décimale pour suivre l'arrivée
+  if (latestDigitEl) {
+    latestDigitEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }
 }
 
