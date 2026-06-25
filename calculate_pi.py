@@ -140,8 +140,12 @@ class ChudnovskyEngine:
         }
 
     def save_checkpoint(self, path: Path):
-        with open(path, "w", encoding="utf-8") as f:
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        tmp_path.replace(path)
 
     def estimate_digits(self) -> int:
         est = int(self.n * DIGITS_PER_TERM) - SAFETY_MARGIN
