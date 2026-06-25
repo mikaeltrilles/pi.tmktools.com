@@ -389,11 +389,12 @@ input#customN:focus { border-color:var(--cyan); }
     <div class="panel">
       <h3><span class="icon">💾</span> Fichier global</h3>
       <div class="storage-info">
-        <span class="val" id="storedCount">—</span> décimales dans pi_complet.txt<br>
+        <span class="val" id="storedCount">—</span> décimales<br>
+        <span style="font-size:0.65rem;color:var(--text-faint);" id="storedFile">pi_complet.txt</span><br>
         <span class="val" id="storedDate">—</span>
       </div>
       <div style="display:flex; gap:0.5rem; margin-top:0.6rem;">
-        <button id="btnDlComplet" class="btn btn-dl" style="flex:1;">⬇ pi_complet.txt</button>
+        <button id="btnDlComplet" class="btn btn-dl" style="flex:1;">⬇ Fichier global</button>
       </div>
     </div>
   </aside>
@@ -941,9 +942,10 @@ $('chainSearch').addEventListener('input', async (e) => {
 /* ── Storage stats ── */
 async function updateStorage() {
   try {
-    const { total_digits_stored, last_computed, file_size_kb } = await (await fetch('/stats')).json();
+    const { total_digits_stored, last_computed, file_size_kb, source_file } = await (await fetch('/stats')).json();
     $('storedCount').textContent = total_digits_stored > 0 ? fmt(total_digits_stored) : '—';
     $('storedDate').textContent = last_computed ? new Date(last_computed).toLocaleString('fr-FR') : '—';
+    if (source_file) $('storedFile').textContent = source_file;
   } catch {}
 }
 

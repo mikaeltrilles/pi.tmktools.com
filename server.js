@@ -23,6 +23,17 @@ const HISTORY_FILE = path.join(DATA_DIR, 'pi_history.log');
 const COMPLET_FILE = path.join(DATA_DIR, 'pi_complet.txt');
 const SSE_BLOCK_SIZE = 10; // décimales par événement SSE
 
+const PALIERS = [10, 20, 50, 100, 500, 1000, 5000];
+function generatePaliers() {
+  const max = Number.MAX_SAFE_INTEGER;
+  for (let p = 1; p <= max / 10; p *= 10) {
+    if (!PALIERS.includes(p)) PALIERS.push(p);
+    if (!PALIERS.includes(5 * p)) PALIERS.push(5 * p);
+  }
+  PALIERS.sort((a, b) => a - b);
+}
+generatePaliers();
+
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 /* ── Middleware ── */
@@ -51,14 +62,71 @@ function snapshotPath(n) {
   return path.join(DATA_DIR, `pi_${n}.txt`);
 }
 
+function completFileForTotal(n) {
+  return path.join(DATA_DIR, `pi_${n}.txt`);
+}
+
+function resolveCompletFile() {
+  // Si pi_complet.txt existe, il reste la source principale (compat)
+  if (fs.existsSync(COMPLET_FILE)) return COMPLET_FILE;
+
+  // Sinon, chercher le plus grand pi_NNN.txt cohérent
+  try {
+    const files = fs.readdirSync(DATA_DIR);
+    let best = null, bestTotal = 0;
+    for (const f of files) {
+      const m = f.match(/^pi_(\d+)\.txt$/);
+      if (!m) continue;
+      const n = parseInt(m[1], 10);
+      const candidate = path.join(DATA_DIR, f);
+      const { total } = readPiFileSync(candidate);
+      if (total >= bestTotal) {
+        bestTotal = total;
+        best = candidate;
+      }
+    }
+    if (best) return best;
+  } catch {}
+  return COMPLET_FILE; // fallback
+}
+
+function readPiFileSync(filePath) {
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const lines = content.split('\n');
+    let total = 0;
+    let digits = '3.';
+
+    for (const line of lines) {
+      if (line.startsWith('# Nombre total de décimales :')) {
+        total = parseInt(line.split(':')[1].trim(), 10) || 0;
+      }
+    }
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('3.') || /^\d+\.\d+$/.test(trimmed)) {
+        digits = trimmed;
+        break;
+      }
+    }
+
+    const computedTotal = Math.max(total, digits.length - 2);
+    return { digits, total: computedTotal, lastModified: fs.statSync(filePath).mtime.toISOString() };
+  } catch (e) {
+    if (e.code === 'ENOENT') return { digits: '3.', total: 0, lastModified: null };
+    throw e;
+  }
+}
+
 async function appendHistory(line) {
   await fs.promises.appendFile(HISTORY_FILE, line, 'utf8').catch(() => {});
 }
 
-/* ── Lecture du fichier pi_complet.txt ── */
-async function readPiComplet() {
+/* ── Lecture d'un fichier pi (synchrone ou asynchrone) ── */
+async function readPiFile(filePath) {
   try {
-    const content = await fs.promises.readFile(COMPLET_FILE, 'utf8');
+    const content = await fs.promises.readFile(filePath, 'utf8');
     const lines = content.split('\n');
     let digits = '3.';
     let total = 0;
@@ -71,23 +139,29 @@ async function readPiComplet() {
 
     for (const line of lines) {
       const trimmed = line.trim();
-      if (trimmed.startsWith('3.')) {
+      if (trimmed.startsWith('3.') || /^\d+\.\d+$/.test(trimmed)) {
         digits = trimmed;
         break;
       }
     }
 
-    return { digits, total };
+    return { digits, total: Math.max(total, digits.length - 2) };
   } catch (e) {
     if (e.code === 'ENOENT') return { digits: '3.', total: 0 };
     throw e;
   }
 }
 
+async function readPiComplet() {
+  const filePath = resolveCompletFile();
+  return readPiFile(filePath);
+}
+
 /* ── Mise à jour de l'état depuis le fichier ── */
 async function refreshPiFromFile() {
+  const filePath = resolveCompletFile();
   try {
-    const st = await fs.promises.stat(COMPLET_FILE);
+    const st = await fs.promises.stat(filePath);
     const mtime = st.mtime.toISOString();
     if (piLastModified === mtime) return false; // pas de changement
     piLastModified = mtime;
@@ -98,14 +172,40 @@ async function refreshPiFromFile() {
     piTotal = total;
 
     if (total > oldTotal) {
-      console.log(`📄 pi_complet.txt mis à jour : ${total.toLocaleString('fr-FR')} décimales (+${total - oldTotal})`);
-      await appendHistory(`${new Date().toISOString()} | FILE | ${total} décimales depuis pi_complet.txt\n`);
+      console.log(`📄 ${path.basename(filePath)} mis à jour : ${total.toLocaleString('fr-FR')} décimales (+${total - oldTotal})`);
+      await appendHistory(`${new Date().toISOString()} | FILE | ${total} décimales depuis ${path.basename(filePath)}\n`);
+      await ensureSnapshots(digits, total);
       streamNewFileDigits(oldTotal, total);
     }
     return true;
   } catch (e) {
     console.error('Erreur refreshPiFromFile :', e.message);
     return false;
+  }
+}
+
+/* ── Générer / mettre à jour les snapshots de paliers ── */
+async function ensureSnapshots(digits, total) {
+  const promises = [];
+  for (const n of PALIERS) {
+    if (n > total) break;
+    const sp = snapshotPath(n);
+    if (fs.existsSync(sp)) continue;
+    const slice = digits.slice(0, 2 + n);
+    const header = [
+      '# Pi Digits made with ♥ by PI Explorer',
+      `# Généré le : ${new Date().toISOString()}`,
+      `# Nombre total de décimales : ${n}`,
+      '# Source : pi_complet.txt uploadé par Raspberry',
+      '#',
+      slice,
+      ''
+    ].join('\n');
+    promises.push(fs.promises.writeFile(sp, header, 'utf8'));
+  }
+  if (promises.length) {
+    await Promise.all(promises);
+    broadcastFile('milestone', { total_decimals: total });
   }
 }
 
@@ -132,14 +232,15 @@ function streamNewFileDigits(from, to) {
 
 /* ── Surveillance du fichier ── */
 function watchPiFile() {
+  const filePath = resolveCompletFile();
   // fs.watch est capricieux sur certains FS : on combine avec un polling
   try {
-    const watcher = fs.watch(COMPLET_FILE, async (eventType) => {
+    const watcher = fs.watch(filePath, async (eventType) => {
       if (eventType === 'change') await refreshPiFromFile();
     });
     fileWatchers.push(watcher);
   } catch (e) {
-    console.warn('fs.watch indisponible sur pi_complet.txt :', e.message);
+    console.warn(`fs.watch indisponible sur ${path.basename(filePath)} :`, e.message);
   }
 
   // Polling de secours toutes les 2 secondes
@@ -149,15 +250,16 @@ function watchPiFile() {
 
 /* ── Chargement initial ── */
 async function loadPiFile() {
-  const { digits, total } = await readPiComplet();
+  const filePath = resolveCompletFile();
+  const { digits, total, lastModified } = readPiFileSync(filePath);
   piDigits = digits;
   piTotal = total;
+  piLastModified = lastModified;
   if (total > 0) {
-    const st = await fs.promises.stat(COMPLET_FILE);
-    piLastModified = st.mtime.toISOString();
-    console.log(`📄 Chargement initial : ${total.toLocaleString('fr-FR')} décimales depuis pi_complet.txt`);
+    await ensureSnapshots(digits, total);
+    console.log(`📄 Chargement initial : ${total.toLocaleString('fr-FR')} décimales depuis ${path.basename(filePath)}`);
   } else {
-    console.log('🆕 Aucun pi_complet.txt trouvé — en attente d upload Raspberry');
+    console.log('🆕 Aucun fichier pi trouvé — en attente d upload Raspberry');
   }
 }
 
@@ -204,17 +306,25 @@ app.get('/stored', async (req, res) => {
 });
 
 app.get('/stats', async (req, res) => {
+  const filePath = resolveCompletFile();
   try {
-    const st = await fs.promises.stat(COMPLET_FILE);
-    const txt = await fs.promises.readFile(COMPLET_FILE, 'utf8');
+    const st = await fs.promises.stat(filePath);
+    const txt = await fs.promises.readFile(filePath, 'utf8');
     let total = 0, last = null;
     for (const l of txt.split('\n')) {
       if (l.startsWith('# Nombre total de décimales :')) total = parseInt(l.split(':')[1].trim(), 10) || 0;
       if (l.startsWith('# Dernière mise à jour :')) last = new Date(l.split(':').slice(1).join(':').trim()).toISOString();
     }
-    res.json({ total_digits_stored: total, last_computed: last, file_size_kb: Math.round(st.size / 1024 * 10) / 10 });
+    const digitsLine = txt.split('\n').find(l => l.trim().startsWith('3.') || /^\d+\.\d+$/.test(l.trim()));
+    const computedTotal = Math.max(total, digitsLine ? digitsLine.trim().length - 2 : 0);
+    res.json({
+      total_digits_stored: computedTotal,
+      last_computed: last || piLastModified,
+      file_size_kb: Math.round(st.size / 1024 * 10) / 10,
+      source_file: path.basename(filePath),
+    });
   } catch (e) {
-    if (e.code === 'ENOENT') return res.json({ total_digits_stored: piTotal, last_computed: piLastModified, file_size_kb: 0 });
+    if (e.code === 'ENOENT') return res.json({ total_digits_stored: piTotal, last_computed: piLastModified, file_size_kb: 0, source_file: path.basename(filePath) });
     res.status(500).json({ error: 'Erreur' });
   }
 });
@@ -324,10 +434,11 @@ app.get('/snapshot/:n', async (req, res) => {
 
 /* Télécharger pi_complet.txt */
 app.get('/complet', async (req, res) => {
+  const filePath = resolveCompletFile();
   try {
-    const txt = await fs.promises.readFile(COMPLET_FILE, 'utf8');
+    const txt = await fs.promises.readFile(filePath, 'utf8');
     res.setHeader('Content-Type', 'text/plain');
-    res.setHeader('Content-Disposition', 'attachment; filename="pi_complet.txt"');
+    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(filePath)}"`);
     res.send(txt);
   } catch (e) {
     if (e.code === 'ENOENT') return res.status(404).send('# Aucun fichier complet.\n');
@@ -400,7 +511,7 @@ app.get('/search-chain', async (req, res) => {
 /* ── Démarrage — mode lecture fichier ── */
 app.listen(PORT, async () => {
   console.log(`π Explorer en ligne : http://localhost:${PORT}`);
-  console.log('  Mode : affichage depuis pi_complet.txt (uploadé par le Raspberry)');
+  console.log('  Mode : affichage depuis pi_complet.txt / pi_N.txt (uploadé par le Raspberry)');
 
   await loadPiFile();
   watchPiFile();
