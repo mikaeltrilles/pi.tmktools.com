@@ -15,6 +15,10 @@ DirectoryIndex disabled
 RewriteEngine On
 RewriteBase /
 
+# Désactiver le buffering du proxy Apache pour les SSE (Server-Sent Events)
+SetEnv proxy-nokeepalive 1
+SetEnv proxy-sendchunks 1
+
 # Forcer le proxy de la racine vers Node.js (évite que Apache serve index.html statique)
 RewriteRule ^$ http://127.0.0.1:3001/ [P,L]
 
