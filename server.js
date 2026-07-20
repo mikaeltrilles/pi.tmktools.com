@@ -21,6 +21,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'pi_digits.txt');
 const HISTORY_FILE = path.join(DATA_DIR, 'pi_history.log');
 const COMPLET_FILE = path.join(DATA_DIR, 'pi_complet.txt');
+const EXTERNAL_PI_FILE = process.env.PI_SOURCE_FILE || path.join(__dirname, '..', 'PIpi4', 'pi_complet.txt');
 const SSE_BLOCK_SIZE = 10; // décimales par événement SSE
 
 const PALIERS = [];
@@ -72,27 +73,47 @@ function completFileForTotal(n) {
 }
 
 function resolveCompletFile() {
-  // Si pi_complet.txt existe, il reste la source principale (compat)
-  if (fs.existsSync(COMPLET_FILE)) return COMPLET_FILE;
+  // 1) Source forcée par variable d'environnement
+  if (process.env.PI_SOURCE_FILE && fs.existsSync(process.env.PI_SOURCE_FILE)) {
+    return process.env.PI_SOURCE_FILE;
+  }
 
-  // Sinon, chercher le plus grand pi_NNN.txt cohérent
-  try {
-    const files = fs.readdirSync(DATA_DIR);
-    let best = null, bestTotal = 0;
-    for (const f of files) {
-      const m = f.match(/^pi_(\d+)\.txt$/);
-      if (!m) continue;
-      const n = parseInt(m[1], 10);
-      const candidate = path.join(DATA_DIR, f);
-      const { total } = readPiFileSync(candidate);
-      if (total >= bestTotal) {
-        bestTotal = total;
-        best = candidate;
+  // 2) Comparaison entre la source locale data/pi_complet.txt et la source externe PIpi4/pi_complet.txt
+  //    On choisit celle qui possède le plus de décimales (basé sur la taille et l'en-tête).
+  const candidates = [COMPLET_FILE, EXTERNAL_PI_FILE].filter(fs.existsSync);
+
+  // 3) Si aucun pi_complet.txt n'existe, chercher le plus grand pi_NNN.txt local
+  if (candidates.length === 0) {
+    try {
+      const files = fs.readdirSync(DATA_DIR);
+      let best = null, bestTotal = 0;
+      for (const f of files) {
+        const m = f.match(/^pi_(\d+)\.txt$/);
+        if (!m) continue;
+        const n = parseInt(m[1], 10);
+        const candidate = path.join(DATA_DIR, f);
+        const { total } = readPiFileSync(candidate);
+        if (total >= bestTotal) {
+          bestTotal = total;
+          best = candidate;
+        }
       }
+      if (best) return best;
+    } catch {}
+    return COMPLET_FILE; // fallback, même s'il n'existe pas encore
+  }
+
+  // Élire la source la plus fournie
+  let best = candidates[0], bestTotal = readPiFileSync(candidates[0]).total;
+  for (let i = 1; i < candidates.length; i++) {
+    const candidate = candidates[i];
+    const { total } = readPiFileSync(candidate);
+    if (total > bestTotal) {
+      bestTotal = total;
+      best = candidate;
     }
-    if (best) return best;
-  } catch {}
-  return COMPLET_FILE; // fallback
+  }
+  return best;
 }
 
 function extractPiDigits(content) {
@@ -319,7 +340,9 @@ async function loadPiFile() {
   await cleanupObsoleteSnapshots();
   if (total > 0) {
     await ensureSnapshots(digits, total);
-    console.log(`📄 Chargement initial : ${total.toLocaleString('fr-FR')} décimales depuis ${path.basename(filePath)}`);
+    const sourceLabel = path.basename(filePath);
+    const isExternal = filePath === EXTERNAL_PI_FILE;
+    console.log(`📄 Chargement initial : ${total.toLocaleString('fr-FR')} décimales depuis ${sourceLabel}${isExternal ? ' (source PIpi4)' : ''}`);
   } else {
     console.log('🆕 Aucun fichier pi trouvé — en attente d upload Raspberry');
   }

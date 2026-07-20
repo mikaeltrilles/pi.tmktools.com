@@ -822,7 +822,8 @@ function nombreEnLettres(n) {
     ['sextilliard','sextilliards'],
   ];
 
-  function conv(m) {
+  // isFinal indique si ce bloc est le dernier (le 'cent' final prend un s au pluriel)
+  function conv(m, isFinal = false) {
     if (m < 10) return unit[m];
     if (m < 20) return teens[m - 10];
     if (m < 70) {
@@ -831,16 +832,18 @@ function nombreEnLettres(n) {
     }
     if (m < 80) {
       const r = m - 60;
-      return r === 1 ? 'soixante-et-onze' : 'soixante-' + conv(r);
+      return r === 1 ? 'soixante-et-onze' : 'soixante-' + conv(r, false);
     }
     if (m < 100) {
       const r = m - 80;
-      return r === 1 ? 'quatre-vingt-un' : 'quatre-vingt' + (r > 0 ? '-' + conv(r) : '');
+      return r === 1 ? 'quatre-vingt-un' : 'quatre-vingt' + (r > 0 ? '-' + conv(r, false) : '');
     }
     if (m < 1000) {
       const c = Math.floor(m / 100), r = m % 100;
       const centStr = c > 1 ? unit[c] + ' cent' : 'cent';
-      return r > 0 ? centStr + ' ' + conv(r) : centStr + 's';
+      if (r > 0) return centStr + ' ' + conv(r, false);
+      if (!isFinal) return centStr; // cent suivi par un groupe supérieur : pas de s
+      return c > 1 ? centStr + 's' : centStr; // cent tout seul = 'cent', deux cents = 'deux cents'
     }
     // Découpage par groupes de 1000
     const parts = [];
@@ -854,20 +857,20 @@ function nombreEnLettres(n) {
       const val = parts[i];
       if (val === 0) continue;
       if (i === 0) {
-        result = result ? result + ' ' + conv(val) : conv(val);
+        result = result ? result + ' ' + conv(val, true) : conv(val, true);
       } else if (i === 1) {
-        const milleStr = val > 1 ? conv(val) + ' mille' : 'mille';
+        const milleStr = val > 1 ? conv(val, false) + ' mille' : 'mille';
         result = result ? result + ' ' + milleStr : milleStr;
       } else {
         const [sg, pl] = groupes[i] || ['',''];
         if (!sg) continue;
-        const grpStr = val > 1 ? conv(val) + ' ' + pl : 'un ' + sg;
+        const grpStr = val > 1 ? conv(val, false) + ' ' + pl : 'un ' + sg;
         result = result ? result + ' ' + grpStr : grpStr;
       }
     }
     return result || 'zéro';
   }
-  return conv(n);
+  return conv(n, true);
 }
 
 let lastDigitPopinTimer = null;
