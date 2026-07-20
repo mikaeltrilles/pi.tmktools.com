@@ -65,10 +65,54 @@ pi.tmktools.com/
 
 ## Déploiement
 
-Le serveur écoute sur le port `3001`. Mettez-le derrière un reverse proxy
-(Apache/Nginx) avec buffering désactivé pour les SSE.
+### Déploiement autonome (code + données π)
 
-### Apache
+Le script `deploy-with-data.sh` fait tout en une seule commande :
+
+```bash
+./deploy-with-data.sh "fix(data): mise à jour des 13M décimales"
+```
+
+Il effectue automatiquement :
+1. La copie de `../PIpi4/pi_complet.txt` vers `data/pi_complet.txt`
+2. Le commit & push sur GitHub
+3. Le déploiement du code sur le serveur (rsync, ou scp en fallback Windows)
+4. L'upload atomique de `pi_complet.txt` sur le serveur de production
+5. Le rechargement PM2 du serveur Node.js
+6. Une vérification finale du nombre de décimales exposées
+
+### Déploiement du code seul
+
+```bash
+./deploy.sh "feat(ui): nouvelle couleur"
+```
+
+Ce script déploie uniquement le code Node.js/Express/JS. Le fichier `data/pi_complet.txt` n'est pas modifié sur le serveur.
+
+### Synchronisation locale PIpi4 → picalc
+
+Pour faire pointer le site local sur les dernières décimales calculées par le Raspberry :
+
+```bash
+./sync-pi-data.sh
+```
+
+Puis redémarrez le serveur local, ou cliquez sur **Resync** dans l'interface web.
+
+### Serveur local
+
+```bash
+npm install
+npm start
+# → http://localhost:3001
+```
+
+Le serveur détecte automatiquement la source π la plus fournie :
+- `data/pi_complet.txt`
+- `../PIpi4/pi_complet.txt`
+- ou un fichier forcé via `PI_SOURCE_FILE=/chemin/vers/pi_complet.txt npm start`
+
+### Reverse proxy Apache
 
 ```apache
 RewriteEngine On
