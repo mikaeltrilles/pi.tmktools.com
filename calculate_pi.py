@@ -284,23 +284,56 @@ def cleanup_old_backups(keep: int = 3):
 
 def upload_remote(src: Path) -> bool:
     """
-    Upload le fichier src vers le serveur de production via scp.
-    Retourne True si l'upload a reussi.
+    Upload le fichier src vers le serveur de production via scp, de maniere
+    atomique (fichier temporaire puis mv). Retourne True si l'upload a reussi.
     """
     try:
+        tmp_target = REMOTE_SCP_TARGET + ".tmp"
+        tmp_path = REMOTE_PATH + ".tmp"
+        expected_size = src.stat().st_size
         log_message(f"☁️  Envoi vers le serveur de production : {REMOTE_SCP_TARGET}")
+
+        # 1) Transfert vers un fichier temporaire
         result = subprocess.run(
-            ["scp", "-q", str(src), REMOTE_SCP_TARGET],
+            ["scp", "-q", str(src), tmp_target],
             capture_output=True,
             text=True,
             timeout=300,
         )
-        if result.returncode == 0:
-            log_message(f"✅ Upload production reussi : {REMOTE_SCP_TARGET}")
-            return True
-        else:
+        if result.returncode != 0:
             log_message(f"⚠️  [ERREUR UPLOAD PRODUCTION] scp code {result.returncode} : {result.stderr.strip()}")
             return False
+
+        # 2) Verification de la taille du fichier temporaire
+        result = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", REMOTE_SCP_TARGET.rsplit(":", 1)[0],
+             f"stat -c %s {tmp_path}"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            log_message(f"⚠️  [ERREUR UPLOAD PRODUCTION] Impossible de verifier le temporaire : {result.stderr.strip()}")
+            return False
+        tmp_size = int(result.stdout.strip())
+        if tmp_size != expected_size:
+            log_message(f"⚠️  [ERREUR UPLOAD PRODUCTION] Taille temporaire incoherente : {tmp_size} != {expected_size}")
+            return False
+
+        # 3) Deplacement atomique vers la destination finale
+        result = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", REMOTE_SCP_TARGET.rsplit(":", 1)[0],
+             f"mv {tmp_path} {REMOTE_PATH}"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            log_message(f"⚠️  [ERREUR UPLOAD PRODUCTION] mv final a echoue : {result.stderr.strip()}")
+            return False
+
+        log_message(f"✅ Upload production reussi : {REMOTE_SCP_TARGET}")
+        return True
     except subprocess.TimeoutExpired:
         log_message("⏱️  [ERREUR UPLOAD PRODUCTION] Timeout SCP (300s)")
         return False
