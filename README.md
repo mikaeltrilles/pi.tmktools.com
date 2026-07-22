@@ -99,6 +99,25 @@ Pour faire pointer le site local sur les dernières décimales calculées par le
 
 Puis redémarrez le serveur local, ou cliquez sur **Resync** dans l'interface web.
 
+### Snapshot protecteur
+
+Si le Raspberry ecrase accidentellement `pi_complet.txt` avec un fichier plus petit (redemarrage a zero, bug de checkpoint...), le site web bascule automatiquement sur le snapshot `pi_20000000.txt` (contenant les 13+ millions de decimales deja atteintes), car le serveur choisit toujours la source π la plus fournie.
+
+Pour regenerer et uploader ce snapshot protecteur :
+
+```bash
+./deploy-protect-snapshot.sh
+```
+
+### Mise a jour du calculateur Raspberry
+
+Le calculateur sur le Raspberry doit avoir la derniere version de `calculate_pi.py` pour eviter les regressions. Pour le mettre a jour :
+
+```bash
+cd ../PIpi4
+./deploy-to-raspberry.sh
+```
+
 ### Serveur local
 
 ```bash
