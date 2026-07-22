@@ -21,9 +21,15 @@ Auteur : PI RasberryPi4
 """
 
 
+# Désactiver la limite de conversion int<->str pour les très grands entiers
+# (Chudnovsky produit des nombres à millions de chiffres). Doit être fait AVANT
+# l'import de json car json.load appelle int() sur les grands littéraux.
+import sys
+if hasattr(sys, "set_int_max_str_digits"):
+    sys.set_int_max_str_digits(0)
+
 # Fuseau horaire Europe/Paris pour les logs et l'en-tete du fichier π
 import os
-import sys
 import shutil
 import signal
 import json
@@ -46,9 +52,6 @@ except ImportError:
     except ImportError:
         TZ_PARIS = datetime.timezone.utc
 
-if hasattr(sys, "set_int_max_str_digits"):
-    sys.set_int_max_str_digits(0)
-
 CHUNK_SIZE = 1000
 BACKUP_DIR = Path("/home/mika/Documents")
 OUTPUT_FILE = Path("pi_complet.txt")
@@ -67,6 +70,7 @@ REMOTE_PATH = f"{REMOTE_DIR}/pi_complet.txt"
 REMOTE_SCP_TARGET = f"{REMOTE_USER}@{REMOTE_HOST}:{REMOTE_PATH}"
 REMOTE_CHECKPOINT_PATH = f"{REMOTE_DIR}/pi_checkpoint.json"
 REMOTE_CHECKPOINT_SCP_TARGET = f"{REMOTE_USER}@{REMOTE_HOST}:{REMOTE_CHECKPOINT_PATH}"
+REMOTE_CHECKPOINT_RESTORE_PATH = f"{REMOTE_DIR}/pi_checkpoint_restore.json"
 REMOTE_CHECKPOINT_HISTORY = 10
 
 C = 426880
@@ -259,7 +263,7 @@ def write_pi_file(pi_str: str, path: Path):
 
 
 def write_preview(pi_str: str, digits_done: int):
-    preview_len = min(len(pi_str), digits_done + 2 + 50)
+    preview_len = min(len(pi_str), 2 + 50)
     preview = pi_str[:preview_len]
     with open(PREVIEW_FILE, "w", encoding="utf-8") as f:
         f.write(build_header(digits_done))
@@ -336,8 +340,24 @@ def verify_remote_upload(expected_size: int) -> bool:
 def deploy_to_production(src: Path) -> bool:
     """
     Upload le fichier vers le serveur de production et verifie la taille.
-    Retourne True si tout est OK.
+    Avant d'ecraser le fichier distant, verifie qu'il n'est pas PLUS AVANCE
+    que le fichier local. Cela protege contre les demarrages accidentels a
+    zero ou les regressions de checkpoint : un petit fichier local ne peut
+    jamais ecraser un gros fichier distant.
+
+    Retourne True si tout est OK (upload reussi ou distant deja plus avance).
     """
+    local_digits = parse_digits_from_header(src)
+    if local_digits is None:
+        log_message("⚠️  [DEPLOY] Impossible de lire le nombre de decimales locales — upload annule")
+        return False
+
+    remote_digits = get_remote_digits_count(REMOTE_PATH)
+    if remote_digits is not None and remote_digits >= local_digits:
+        log_message(f"🛡️  [DEPLOY] Fichier distant plus avance ({remote_digits:,} >= {local_digits:,}) — upload skipped")
+        log_message("   Le calculateur local continue d'avancer ; il uploadera quand il depassera le distant.")
+        return True
+
     ok = upload_remote(src)
     if not ok:
         return False
@@ -393,6 +413,23 @@ def upload_remote_checkpoint(src: Path) -> bool:
             # On ignore silencieusement les erreurs de rotation
             _ = rotate_result.returncode
 
+        # Mettre a jour le checkpoint de restauration protégé si on a depasse
+        # le meilleur restore existant. Cela garantit toujours un point de
+        # reprise a la valeur maximale atteinte, meme si le checkpoint
+        # principal est ecrase par une regression.
+        try:
+            restore_digits = get_remote_digits_count(REMOTE_CHECKPOINT_RESTORE_PATH)
+            if restore_digits is None or digits_done > restore_digits:
+                subprocess.run(
+                    ["ssh", "-o", "BatchMode=yes", f"{REMOTE_USER}@{REMOTE_HOST}",
+                     f"cp {REMOTE_CHECKPOINT_PATH} {REMOTE_CHECKPOINT_RESTORE_PATH}"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+        except Exception:
+            pass
+
         return True
     except Exception:
         return False
@@ -441,6 +478,27 @@ def get_remote_file_size(remote_path: str) -> Optional[int]:
         )
         if result.returncode == 0:
             return int(result.stdout.strip())
+    except Exception:
+        return None
+    return None
+
+
+def get_remote_digits_count(remote_path: str) -> Optional[int]:
+    """
+    Lit l'en-tete d'un fichier π distant et retourne le nombre de decimales.
+    Ne telecharge pas le fichier complet : uniquement les 20 premieres lignes.
+    """
+    try:
+        target_host = REMOTE_SCP_TARGET.rsplit(":", 1)[0]
+        result = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", target_host,
+             f"head -n 20 {remote_path}"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode == 0:
+            return parse_digits_from_header(result.stdout)
     except Exception:
         return None
     return None
@@ -680,17 +738,23 @@ def find_remote_checkpoint_for_snapshot(digits: int) -> Optional[str]:
     return best_path
 
 
-def try_restore_from_remote_checkpoint(remote_path: Optional[str] = None) -> Optional[ChudnovskyEngine]:
+def read_remote_checkpoint_engine(remote_path: Optional[str] = None,
+                                 tmp_suffix: str = ".remote_checkpoint_tmp") -> Optional[ChudnovskyEngine]:
     """
-    Essaye de telecharger le checkpoint distant et de l'utiliser.
-    Si `remote_path` est fourni, telecharge ce fichier specifique.
-    Sinon essaie d'abord le checkpoint principal, puis les historiques.
-    Retourne le moteur restaure, ou None si impossible.
+    Telecharge un checkpoint distant et retourne le moteur correspondant,
+    SANS l'ecraser sur le disque local. Permet de tester/comparer avant de
+    decider de remplacer le checkpoint local.
     """
-    candidates = [remote_path] if remote_path else [REMOTE_CHECKPOINT_PATH]
-    if not remote_path:
+    candidates: list[Optional[str]] = []
+    if remote_path:
+        candidates.append(remote_path)
+    else:
+        candidates.extend([
+            REMOTE_CHECKPOINT_RESTORE_PATH,
+            REMOTE_CHECKPOINT_PATH,
+        ])
         try:
-            for digits, remote_file in list_remote_checkpoints():
+            for _digits, remote_file in list_remote_checkpoints():
                 candidates.append(remote_file)
         except Exception:
             pass
@@ -699,16 +763,32 @@ def try_restore_from_remote_checkpoint(remote_path: Optional[str] = None) -> Opt
         if not path:
             continue
         try:
-            tmp_checkpoint = CHECKPOINT_FILE.with_suffix(".remote_checkpoint_tmp")
+            tmp_checkpoint = CHECKPOINT_FILE.with_suffix(tmp_suffix)
             if download_remote_file(path, tmp_checkpoint):
                 engine = ChudnovskyEngine.from_checkpoint(tmp_checkpoint)
-                # Sauvegarder definitivement le checkpoint local
-                engine.save_checkpoint(CHECKPOINT_FILE)
                 tmp_checkpoint.unlink(missing_ok=True)
-                log_message(f"🔄 Checkpoint distant restaure ({path.rsplit('/',1)[-1]}) : n={engine.n:,}, {engine.digits_done:,} decimales")
                 return engine
-        except Exception as e:
-            log_message(f"⚠️  Impossible de restaurer {path} : {e}")
+        except Exception:
+            continue
+    return None
+
+
+def try_restore_from_remote_checkpoint(remote_path: Optional[str] = None) -> Optional[ChudnovskyEngine]:
+    """
+    Essaye de telecharger le checkpoint distant et de l'utiliser.
+    Si `remote_path` est fourni, telecharge ce fichier specifique.
+    Sinon essaie dans l'ordre :
+      1. le checkpoint de restauration protégé (pi_checkpoint_restore.json)
+      2. le checkpoint principal (pi_checkpoint.json)
+      3. les checkpoints historiques
+    Retourne le moteur restaure, ou None si impossible.
+    """
+    engine = read_remote_checkpoint_engine(remote_path)
+    if engine is not None:
+        # Sauvegarder definitivement le checkpoint local
+        engine.save_checkpoint(CHECKPOINT_FILE)
+        log_message(f"🔄 Checkpoint distant restaure : n={engine.n:,}, {engine.digits_done:,} decimales")
+        return engine
     return None
 
 
@@ -728,6 +808,35 @@ def restore_from_snapshot_with_remote_fallback(snapshot_digits: int) -> Chudnovs
         log_message("⚠️  Echec de la restauration du checkpoint distant — reconstruction locale")
 
     return restore_checkpoint_from_snapshot(snapshot_digits)
+
+
+def maybe_upgrade_engine_from_remote(engine: ChudnovskyEngine) -> ChudnovskyEngine:
+    """
+    Si un checkpoint distant PLUS AVANCE existe, le telecharger et remplacer
+    le moteur local. Cela evite que le calculateur continue depuis un
+    checkpoint local obsolete apres une restauration ou une copie erronee.
+    Le checkpoint local NEST JAMAIS ecrase par un checkpoint distant moins
+    avance.
+    """
+    try:
+        remote_engine = read_remote_checkpoint_engine()
+        if remote_engine is not None and remote_engine.digits_done > engine.digits_done:
+            # On a verifie : le distant est strictement plus avance. On peut
+            # maintenant l'adopter definitivement.
+            remote_engine.save_checkpoint(CHECKPOINT_FILE)
+            log_message(
+                f"⬆️  Upgrade depuis le checkpoint distant : "
+                f"{engine.digits_done:,} → {remote_engine.digits_done:,} decimales"
+            )
+            return remote_engine
+        elif remote_engine is not None:
+            log_message(
+                f"🛡️  Checkpoint local conserve ({engine.digits_done:,} decimales) : "
+                f"le distant ({remote_engine.digits_done:,}) n'est pas plus avance"
+            )
+    except Exception as e:
+        log_message(f"⚠️  [UPGRADE DISTANT] {e}")
+    return engine
 
 
 def make_backup(src: Path, digits_done: int) -> Optional[Path]:
@@ -1009,6 +1118,9 @@ def main():
             try:
                 engine = ChudnovskyEngine.from_checkpoint(CHECKPOINT_FILE)
                 log_message(f"🔄 Reprise du checkpoint : n={engine.n:,}, {engine.digits_done:,} decimales deja validees")
+                # Si un checkpoint distant plus avance existe, le prendre pour eviter
+                # une regression silencieuse (ex. Raspberry redemarre avec un vieux checkpoint).
+                engine = maybe_upgrade_engine_from_remote(engine)
             except Exception as e:
                 log_message(f"⚠️  Checkpoint local invalide ou vide ({e}) — recherche d'un secours")
                 engine = try_restore_from_remote_checkpoint()
