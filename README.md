@@ -28,6 +28,7 @@ Ce projet calcule les décimales de π avec l'algorithme de **Chudnovsky** en ut
 | `pi_progress.txt` | Aperçu rapide des 50 premiers chiffres |
 | `pi_checkpoint.json` | État du calcul pour la reprise |
 | `pi_calculate.log` | Journal d'exécution complet avec emojis |
+| `../picalc/data/pi_20000000.txt` | Snapshot protecteur de référence utilisé comme source de vérité |
 | `pi_calculate.pid` | PID du processus en arrière-plan |
 | `pi_calculate.lock` | Fichier de verrouillage anti-double-instance |
 
@@ -122,6 +123,7 @@ La somme partielle `S` est maintenue sous la forme `S_n = P_n / (-640320^3)^n`, 
 
 - **Avant upload** : le script lit l'en-tête du fichier π distant. S'il est plus avancé, l'upload est ignoré.
 - **Au démarrage** : si un checkpoint distant est plus avancé que le local, le local est automatiquement upgradé.
+- **Snapshot de référence** : le fichier `../picalc/data/pi_20000000.txt` est utilisé comme source de vérité. Si le calculateur redémarre sans checkpoint valide, il reconstruit l'état depuis ce snapshot protecteur.
 - **Checkpoint de restauration** : `pi_checkpoint_restore.json` est conservé côté serveur comme filet de sécurité maximal.
 
 ## 📝 Format de l'en-tête
