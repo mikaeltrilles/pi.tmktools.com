@@ -24,24 +24,31 @@ if [ ! -f "$LOCAL_PI" ]; then
 fi
 
 echo "📂 Generation du snapshot pi_20000000.txt depuis data/pi_complet.txt..."
-node -e "
-const fs = require('fs');
-const content = fs.readFileSync('$LOCAL_PI'.replace(/\\/g, '/'), 'utf8');
-const raw = content.split('\n').filter(l => !l.trim().startsWith('#')).join('').replace(/\s+/g, '').replace(/,/g, '');
-const digits = raw.match(/-?\d*\.\d+/)[0].replace(/^-/, '');
-const total = digits.length - 2;
-const header = [
-  '# Pi Digits made with ♥ by PI Explorer',
-  '# Généré le : ' + new Date().toISOString(),
-  '# Nombre total de décimales : ' + total,
-  '# Source : snapshot protect 20M',
-  '#',
-  digits,
-  ''
-].join('\n');
-fs.writeFileSync('$SNAPSHOT'.replace(/\\/g, '/'), header, 'utf8');
-console.log('Snapshot genere : ' + total + ' decimales (' + fs.statSync('$SNAPSHOT'.replace(/\\/g, '/')).size + ' octets)');
-"
+python3 - "$LOCAL_PI" "$SNAPSHOT" <<'PY'
+import re, sys, datetime
+src, dst = sys.argv[1], sys.argv[2]
+with open(src, 'r', encoding='utf-8') as f:
+    content = f.read()
+raw = ''.join(l for l in content.split('\n') if not l.strip().startswith('#'))
+raw = re.sub(r'\s+', '', raw).replace(',', '')
+match = re.search(r'-?\d*\.\d+', raw)
+digits = match.group(0).lstrip('-')
+if digits.startswith('.'):
+    digits = '3' + digits
+total = len(digits) - 2
+header = '\n'.join([
+    '# Pi Digits made with ♥ by PI Explorer',
+    '# Généré le : ' + datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    '# Nombre total de décimales : ' + str(total),
+    '# Source : snapshot protect 20M',
+    '#',
+    digits,
+    ''
+])
+with open(dst, 'w', encoding='utf-8') as f:
+    f.write(header)
+print(f'Snapshot genere : {total} decimales')
+PY
 
 echo "☁️  Upload du snapshot sur le serveur..."
 scp -o BatchMode=yes "$SNAPSHOT" "$REMOTE:$REMOTE_DIR/pi_20000000.txt"
