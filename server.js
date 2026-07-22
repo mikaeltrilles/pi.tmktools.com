@@ -64,6 +64,11 @@ let piDistribution = new Array(10).fill(0);
 let fileClients = new Set();
 let fileWatchers = [];
 
+// Cache pour resolveCompletFile : évite de relire plusieurs fichiers de 13 Mo
+// à chaque requête. Invalidé si un mtime ou une taille change.
+let resolvedFileCache = null;
+let resolvedFileCacheKey = null;
+
 function snapshotPath(n) {
   return path.join(DATA_DIR, `pi_${n}.txt`);
 }
@@ -84,7 +89,7 @@ function resolveCompletFile() {
   //    - tous les snapshots pi_NNN.txt locaux
   //    On retourne celui qui contient le plus de décimales. Cela protège le site
   //    contre un pi_complet.txt écrasé par un fichier plus petit : un snapshot
-  //    plus fourni sera automatement utilisé comme source de vérité.
+  //    plus fourni sera automatiquement utilisé comme source de vérité.
   const candidates = [COMPLET_FILE, EXTERNAL_PI_FILE].filter(fs.existsSync);
 
   try {
@@ -100,17 +105,33 @@ function resolveCompletFile() {
     return COMPLET_FILE; // fallback, même s'il n'existe pas encore
   }
 
+  // 3) Vérifier le cache : si les mtimes/tailles n'ont pas changé, renvoyer
+  //    la source déjà connue. Cela évite de relire 3×13 Mo à chaque requête.
+  let cacheKeyParts = [];
+  const headerInfos = candidates.map(p => readPiHeaderSync(p));
+  for (let i = 0; i < candidates.length; i++) {
+    const info = headerInfos[i];
+    cacheKeyParts.push(`${candidates[i]}:${info.lastModified || ''}:${info.size}`);
+  }
+  const cacheKey = cacheKeyParts.join('|');
+  if (resolvedFileCache && resolvedFileCacheKey === cacheKey) {
+    return resolvedFileCache;
+  }
+
   // Élire la source la plus fournie (strictement > pour éviter les oscillations)
   let best = candidates[0];
-  let bestTotal = readPiFileSync(candidates[0]).total;
+  let bestTotal = headerInfos[0].total;
   for (let i = 1; i < candidates.length; i++) {
     const candidate = candidates[i];
-    const { total } = readPiFileSync(candidate);
+    const { total } = headerInfos[i];
     if (total > bestTotal) {
       bestTotal = total;
       best = candidate;
     }
   }
+
+  resolvedFileCache = best;
+  resolvedFileCacheKey = cacheKey;
   return best;
 }
 
@@ -152,6 +173,43 @@ function computeDistribution(digits) {
     if (!isNaN(d)) dist[d]++;
   }
   return dist;
+}
+
+function readPiHeaderSync(filePath) {
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    try {
+      const buffer = Buffer.alloc(4096);
+      const bytesRead = fs.readSync(fd, buffer, 0, 4096, 0);
+      const content = buffer.toString('utf8', 0, bytesRead);
+      const total = extractHeaderTotal(content);
+      const st = fs.fstatSync(fd);
+      return { total, lastModified: st.mtime.toISOString(), size: st.size };
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch (e) {
+    if (e.code === 'ENOENT') return { total: 0, lastModified: null, size: 0 };
+    throw e;
+  }
+}
+
+async function readPiHeader(filePath) {
+  try {
+    const fd = await fs.promises.open(filePath, 'r');
+    try {
+      const { buffer, bytesRead } = await fd.read(Buffer.alloc(4096), 0, 4096, 0);
+      const content = buffer.toString('utf8', 0, bytesRead);
+      const total = extractHeaderTotal(content);
+      const st = await fd.stat();
+      return { total, lastModified: st.mtime.toISOString(), size: st.size };
+    } finally {
+      await fd.close();
+    }
+  } catch (e) {
+    if (e.code === 'ENOENT') return { total: 0, lastModified: null, size: 0 };
+    throw e;
+  }
 }
 
 function readPiFileSync(filePath) {
@@ -304,8 +362,9 @@ function watchPiFile() {
     console.warn(`fs.watch indisponible sur ${path.basename(filePath)} :`, e.message);
   }
 
-  // Polling de secours toutes les 2 secondes
-  const poll = setInterval(() => refreshPiFromFile(), 2000);
+  // Polling de secours toutes les 30 secondes (évite de saturer le CPU en relisant
+  // constamment un fichier de 13 Mo)
+  const poll = setInterval(() => refreshPiFromFile(), 30000);
   fileWatchers.push({ close: () => clearInterval(poll) });
 }
 
