@@ -1,10 +1,11 @@
 # π Explorer — pi.tmktools.com
 
-Retranscription en temps réel des décimales de Pi depuis un fichier uploadé par un Raspberry.
+Retranscription en temps réel des décimales de Pi depuis le fichier `pi_complet.txt` calculé localement dans `..\PIpi4`.
 
 ## Fonctionnalités
 
 - Lecture en temps réel du fichier `data/pi_complet.txt` via **Server-Sent Events**
+- Sélection automatique de la source π la plus fournie (`data/pi_complet.txt`, `..\PIpi4\pi_complet.txt`, ou snapshots `data/pi_N.txt`)
 - Affichage décimale par décimale dans le DOM avec rang coloré
 - Distribution statistique des chiffres 0–9
 - Recherche par rang (ex : « quelle est la 1000ème décimale ? »)
@@ -30,7 +31,7 @@ Mode développement (hot-reload natif Node.js 18+) :
 npm run dev
 ```
 
-Le serveur attend que le Raspberry upload `data/pi_complet.txt` (ou un fichier `data/pi_N.txt`).
+Le serveur lit automatiquement `data/pi_complet.txt` ou, s'il est plus récent, `..\PIpi4\pi_complet.txt`.
 
 ## Routes API
 
@@ -56,7 +57,7 @@ pi.tmktools.com/
 ├── .gitignore
 ├── README.md
 ├── data/
-│   ├── pi_complet.txt → Fichier uploadé par le Raspberry
+│   ├── pi_complet.txt → Fichier π copié depuis ..\PIpi4
 │   ├── pi_N.txt       → Snapshots de paliers
 │   └── pi_history.log → Historique des mises à jour
 └── public/
