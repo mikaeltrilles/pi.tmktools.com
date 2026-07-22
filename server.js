@@ -78,33 +78,31 @@ function resolveCompletFile() {
     return process.env.PI_SOURCE_FILE;
   }
 
-  // 2) Comparaison entre la source locale data/pi_complet.txt et la source externe PIpi4/pi_complet.txt
-  //    On choisit celle qui possède le plus de décimales (basé sur la taille et l'en-tête).
+  // 2) Construire la liste de tous les fichiers candidats :
+  //    - pi_complet.txt local
+  //    - pi_complet.txt externe (PIpi4)
+  //    - tous les snapshots pi_NNN.txt locaux
+  //    On retourne celui qui contient le plus de décimales. Cela protège le site
+  //    contre un pi_complet.txt écrasé par un fichier plus petit : un snapshot
+  //    plus fourni sera automatement utilisé comme source de vérité.
   const candidates = [COMPLET_FILE, EXTERNAL_PI_FILE].filter(fs.existsSync);
 
-  // 3) Si aucun pi_complet.txt n'existe, chercher le plus grand pi_NNN.txt local
-  if (candidates.length === 0) {
-    try {
-      const files = fs.readdirSync(DATA_DIR);
-      let best = null, bestTotal = 0;
-      for (const f of files) {
-        const m = f.match(/^pi_(\d+)\.txt$/);
-        if (!m) continue;
-        const n = parseInt(m[1], 10);
-        const candidate = path.join(DATA_DIR, f);
-        const { total } = readPiFileSync(candidate);
-        if (total >= bestTotal) {
-          bestTotal = total;
-          best = candidate;
-        }
+  try {
+    const files = fs.readdirSync(DATA_DIR);
+    for (const f of files) {
+      if (/^pi_\d+\.txt$/.test(f)) {
+        candidates.push(path.join(DATA_DIR, f));
       }
-      if (best) return best;
-    } catch {}
+    }
+  } catch {}
+
+  if (candidates.length === 0) {
     return COMPLET_FILE; // fallback, même s'il n'existe pas encore
   }
 
-  // Élire la source la plus fournie
-  let best = candidates[0], bestTotal = readPiFileSync(candidates[0]).total;
+  // Élire la source la plus fournie (strictement > pour éviter les oscillations)
+  let best = candidates[0];
+  let bestTotal = readPiFileSync(candidates[0]).total;
   for (let i = 1; i < candidates.length; i++) {
     const candidate = candidates[i];
     const { total } = readPiFileSync(candidate);
