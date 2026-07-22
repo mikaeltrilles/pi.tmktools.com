@@ -59,6 +59,9 @@ PREVIEW_FILE = Path("pi_progress.txt")
 CHECKPOINT_FILE = Path("pi_checkpoint.json")
 LOG_FILE = Path("pi_calculate.log")
 LOCK_FILE = Path("pi_calculate.lock")
+
+# Sources de snapshots locales supplementaires (ex: snapshot protecteur genere par picalc)
+ADDITIONAL_SNAPSHOT_DIRS = [Path("../picalc/data")]
 AUTHOR = "PI RasberryPi4"
 ALGORITHM = "Chudnovsky (BigInt)"
 
@@ -632,7 +635,20 @@ def find_best_snapshot() -> tuple[Optional[Path], int]:
     except Exception:
         pass
 
-    # 3. Fichier local actuel
+    # 3. Snapshots supplementaires locaux (ex: picalc/data/pi_20000000.txt)
+    try:
+        for snapshot_dir in ADDITIONAL_SNAPSHOT_DIRS:
+            if not snapshot_dir.exists():
+                continue
+            for snapshot in sorted(snapshot_dir.glob("pi_*.txt"), key=lambda p: p.stat().st_mtime, reverse=True):
+                digits = parse_digits_from_header(snapshot)
+                if digits and digits > best_digits:
+                    best_path = snapshot
+                    best_digits = digits
+    except Exception:
+        pass
+
+    # 4. Fichier local actuel
     if OUTPUT_FILE.exists():
         local_digits = parse_digits_from_header(OUTPUT_FILE)
         if local_digits and local_digits > best_digits:
