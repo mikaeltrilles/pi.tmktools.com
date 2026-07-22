@@ -15,6 +15,7 @@ COMMIT_MSG="${1:-deploy: $(date '+%Y-%m-%d %H:%M:%S')}"
 DEPLOY_FILES=(
   public
   server.js
+  ecosystem.config.js
   package.json
   package-lock.json
   .htaccess
@@ -71,7 +72,7 @@ else
     mkdir -p $REMOTE_DIR/logs $REMOTE_DIR/data
     cd $REMOTE_DIR
     rm -rf public
-    rm -f server.js package.json package-lock.json .htaccess
+    rm -f server.js ecosystem.config.js package.json package-lock.json .htaccess
   "
   # Envoyer les nouveaux fichiers
   scp -r -o BatchMode=yes "${DEPLOY_FILES[@]}" "$REMOTE:$REMOTE_DIR/"
@@ -94,13 +95,18 @@ ssh "$REMOTE" '
   fi
 
   echo "🔄 Rechargement PM2..."
-  npx pm2 reload pi-tmktools --update-env || npx pm2 start server.js \
-    --name pi-tmktools \
-    --cwd ~/pi.tmktools.com \
-    --log ~/pi.tmktools.com/logs/pi-tmktools.log \
-    --max-memory-restart 256M \
-    --restart-delay 2000 \
-    -- --port 3001
+  if [ -f ecosystem.config.js ]; then
+    npx pm2 reload ecosystem.config.js --update-env \
+      || npx pm2 start ecosystem.config.js
+  else
+    npx pm2 reload pi-tmktools --update-env \
+      || npx pm2 start server.js \
+          --name pi-tmktools \
+          --cwd ~/pi.tmktools.com \
+          --max-memory-restart 1G \
+          --restart-delay 3000 \
+          -- --port 3001
+  fi
 
   npx pm2 save
 
