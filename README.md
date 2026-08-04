@@ -8,6 +8,7 @@ Ce projet calcule les décimales de π avec l'algorithme de **Chudnovsky** en ut
 
 - **♾️ Calcul non borné (infini)** : le programme continue d'ajouter des décimales jusqu'à ce qu'il soit arrêté manuellement.
 - **🔄 Reprise automatique** : l'état du calcul est sauvegardé dans `pi_checkpoint.json`. En cas d'arrêt (`Ctrl+C`, fermeture, redémarrage…), le programme reprend exactement là où il s'était arrêté.
+- **💾 Sauvegardes locales** : les trois dernières copies de `pi_complet.txt` sont conservées dans `/home/mitchlab/Documents`.
 - **💾 Sauvegarde automatique** : toutes les **1000 décimales**, le fichier `pi_complet.txt` est mis à jour.
 - **☁️ Upload automatique vers la production** : après chaque palier, `pi_complet.txt` est uploadé par SCP vers `vote1550@109.234.165.174:/home/vote1550/pi.tmktools.com/data/pi_complet.txt`, avec **vérification du nombre de décimales** du fichier distant.
 - **🛡️ Protection anti-régression** : un fichier local plus petit ne peut jamais écraser un fichier distant plus avancé. Le calculateur télécharge aussi un checkpoint distant plus récent s'il existe.

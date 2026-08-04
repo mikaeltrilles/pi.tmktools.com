@@ -27,7 +27,7 @@ echo "Fichier principal : $(pwd)/pi_complet.txt"
 echo "Apercu temps reel : $(pwd)/pi_progress.txt"
 echo "Checkpoint        : $(pwd)/pi_checkpoint.json"
 echo "Log               : $(pwd)/pi_calculate.log"
-echo "Sauvegardes       : /home/mika/Documents"
+echo "Sauvegardes       : /home/mitchlab/Documents"
 echo ""
 
 # -----------------------------------------------------------------------------

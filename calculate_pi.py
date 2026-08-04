@@ -6,7 +6,7 @@ Calcul de π par l'algorithme de Chudnovsky en arithmetique entiere (BigInt).
 Mode principal : calcul NON BORNE (infini) par paliers de 1000 decimales.
 - Le programme tourne en boucle jusqu'a interruption manuelle.
 - Chaque palier termine, le fichier pi_complet.txt est mis a jour.
-- Une copie de sauvegarde est effectuee dans /home/mika/Documents.
+- Une copie de sauvegarde est effectuee dans /home/mitchlab/Documents.
 - Seuls les 3 derniers backups sont conserves (rotation automatique).
 - L'etat du calcul est sauvegarde dans pi_checkpoint.json apres chaque palier,
   ce qui permet de reprendre exactement la ou le programme s'est arrete.
@@ -53,7 +53,7 @@ except ImportError:
         TZ_PARIS = datetime.timezone.utc
 
 CHUNK_SIZE = 1000
-BACKUP_DIR = Path("/home/mika/Documents")
+BACKUP_DIR = Path("/home/mitchlab/Documents")
 OUTPUT_FILE = Path("pi_complet.txt")
 PREVIEW_FILE = Path("pi_progress.txt")
 CHECKPOINT_FILE = Path("pi_checkpoint.json")
