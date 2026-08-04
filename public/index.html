@@ -10,6 +10,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&family=JetBrains+Mono:wght@400;700&family=Inter:wght@300..600&display=swap" rel="stylesheet">
+<script>
+  (() => {
+    const savedTheme = localStorage.getItem('pi-theme');
+    if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+  })();
+</script>
 
 <style>
 /* ════════════════════════════════════════════════════════════════════════════
@@ -36,6 +42,25 @@
   --font-display: 'Space Grotesk', sans-serif;
   --font-mono:    'JetBrains Mono', 'Fira Code', monospace;
   --font-body:    'Inter', sans-serif;
+}
+
+[data-theme="light"] {
+  --bg-deep:       #edf6ff;
+  --bg-panel:      #ffffff;
+  --bg-cell:       #f4f9ff;
+  --bg-cell-alt:   #eaf3fb;
+  --border-subtle: rgba(22,48,75,0.12);
+  --border-glow:   rgba(0,143,189,0.15);
+  --text-main:     #10243a;
+  --text-dim:      #5f7288;
+  --text-faint:    #8ba0b4;
+  --cyan:          #008fbd;
+  --cyan-dim:      #0d6f90;
+  --magenta:       #a855f7;
+  --amber:         #a66300;
+  --green:         #118654;
+  --red:           #bd2942;
+  --pi-glow:       rgba(0,143,189,0.18);
 }
 
 *,*::before,*::after { box-sizing: border-box; margin:0; }
@@ -83,6 +108,24 @@ body::before {
 .badge.ok .dot  { background:var(--green); box-shadow:0 0 6px var(--green); }
 .badge.warn .dot{ background:var(--amber); }
 @keyframes breathe { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.35;transform:scale(.65)} }
+
+.theme-toggle {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:2.5rem;
+  font-family:var(--font-mono);
+  border:1px solid var(--border-subtle);
+  background:var(--bg-panel);
+  color:var(--text-main);
+  border-radius:.7rem;
+  padding:.42rem .65rem;
+  transition:.2s;
+}
+.theme-toggle:hover { color:var(--cyan); border-color:var(--cyan); }
+.theme-toggle-icon { display:none; font-size:1rem; line-height:1; }
+:root:not([data-theme="light"]) .theme-toggle-icon.moon,
+:root[data-theme="light"] .theme-toggle-icon.sun { display:inline; }
 
 /* ── Toolbar ── */
 .toolbar {
@@ -377,6 +420,10 @@ input#customN:focus { border-color:var(--cyan); }
 
   <div class="status-bar">
     <div class="badge" id="statusBadge"><span class="dot"></span><span id="statusText">Hors ligne</span></div>
+    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Changer de thème" title="Changer de thème">
+      <span class="theme-toggle-icon sun" aria-hidden="true">☀</span>
+      <span class="theme-toggle-icon moon" aria-hidden="true">☾</span>
+    </button>
   </div>
 </header>
 
@@ -448,7 +495,7 @@ input#customN:focus { border-color:var(--cyan); }
 </div>
 
 <footer class="footer">
-  PI Explorer — Retranscription du fichier pi_complet.txt uploadé par Raspberry · Méthode de calcul : Chudnovsky (BigInt) · Node.js · Express · SSE · pi.tmktools.com
+  PI Explorer — Retranscription du fichier pi_complet.txt uploadé par Raspberry · Méthode de calcul : Chudnovsky (BigInt) · Node.js · Express · SSE · <a href="/api/health" style="color:var(--cyan);text-decoration:none;">Statut du service</a> · pi.tmktools.com
 </footer>
 
 </div>
@@ -485,6 +532,11 @@ function setStatus(state) {
   const b = $('statusBadge');
   b.className = 'badge ' + ({ live:'on', connected:'ok', error:'warn', idle:'' }[state] || '');
   $('statusText').textContent = { live:'Retranscription en direct', connected:'Connecté', error:'Erreur', idle:'Hors ligne' }[state] || 'Hors ligne';
+}
+function toggleTheme() {
+  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem('pi-theme', next);
 }
 let toastTimers = new Map();
 function toast(msg, type='info') {
@@ -1029,6 +1081,7 @@ function connectFileStream() {
 }
 
 /* ── Buttons ── */
+$('themeToggle').addEventListener('click', toggleTheme);
 $('btnReset').addEventListener('click', hardReset);
 
 $('btnDlComplet').addEventListener('click', async () => {

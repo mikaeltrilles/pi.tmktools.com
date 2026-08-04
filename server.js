@@ -20,9 +20,12 @@ const PORT = process.env.PORT || 3001;
 const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'pi_digits.txt');
 const HISTORY_FILE = path.join(DATA_DIR, 'pi_history.log');
+const HEALTH_STATE_FILE = path.join(DATA_DIR, 'health_state.json');
 const COMPLET_FILE = path.join(DATA_DIR, 'pi_complet.txt');
 const EXTERNAL_PI_FILE = process.env.PI_SOURCE_FILE || path.join(__dirname, '..', 'PIpi4', 'pi_complet.txt');
 const SSE_BLOCK_SIZE = 10; // décimales par événement SSE
+const CHUNK_STALE_AFTER_MS = Number(process.env.CHUNK_STALE_AFTER_MS) || 15 * 60 * 1000;
+const HEARTBEAT_STALE_AFTER_MS = Number(process.env.HEARTBEAT_STALE_AFTER_MS) || 3 * 60 * 1000;
 
 const PALIERS = [];
 function generatePaliers() {
@@ -51,6 +54,16 @@ app.use((req, res, next) => {
   next();
 });
 
+/* ── Santé du service (supervision) ── */
+app.get('/api/health', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'status.html'));
+});
+
+app.get('/api/health/data', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(getHealthReport());
+});
+
 /* ════════════════════════════════════════════════════════════════════════════
    MODE FICHIER — Lecture de pi_complet.txt + SSE
    ════════════════════════════════════════════════════════════════════════════ */
@@ -63,11 +76,88 @@ let piLastModified = null;
 let piDistribution = new Array(10).fill(0);
 let fileClients = new Set();
 let fileWatchers = [];
+let healthState = { lastChunkAt: null, interruptions: 0, lastInterruptionAt: null };
 
 // Cache pour resolveCompletFile : évite de relire plusieurs fichiers de 13 Mo
 // à chaque requête. Invalidé si un mtime ou une taille change.
 let resolvedFileCache = null;
 let resolvedFileCacheKey = null;
+
+function loadHealthState() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(HEALTH_STATE_FILE, 'utf8'));
+    healthState = { ...healthState, ...saved };
+  } catch {}
+}
+
+async function saveHealthState() {
+  await fs.promises.writeFile(HEALTH_STATE_FILE, JSON.stringify(healthState, null, 2) + '\n', 'utf8').catch(() => {});
+}
+
+async function registerChunk(lastModified) {
+  if (!lastModified) return;
+  const chunkAt = new Date(lastModified);
+  if (Number.isNaN(chunkAt.getTime())) return;
+
+  const previous = healthState.lastChunkAt ? new Date(healthState.lastChunkAt) : null;
+  if (previous && chunkAt > previous && chunkAt - previous > CHUNK_STALE_AFTER_MS) {
+    healthState.interruptions += 1;
+    healthState.lastInterruptionAt = chunkAt.toISOString();
+  }
+  if (!previous || chunkAt > previous) healthState.lastChunkAt = chunkAt.toISOString();
+  await saveHealthState();
+}
+
+function readCalculatorHeartbeat() {
+  try {
+    const heartbeatPath = path.join(DATA_DIR, 'calculator_heartbeat.json');
+    const heartbeat = JSON.parse(fs.readFileSync(heartbeatPath, 'utf8'));
+    const timestamp = new Date(heartbeat.timestamp);
+    if (Number.isNaN(timestamp.getTime())) return null;
+    return { ...heartbeat, timestamp: timestamp.toISOString() };
+  } catch {
+    return null;
+  }
+}
+
+function getHealthReport() {
+  const now = Date.now();
+  const chunkAt = healthState.lastChunkAt || piLastModified;
+  const heartbeat = readCalculatorHeartbeat();
+  const calculatorAt = heartbeat?.timestamp || chunkAt;
+  const ageMs = calculatorAt ? Math.max(0, now - new Date(calculatorAt).getTime()) : null;
+  const freshnessWindowMs = heartbeat ? HEARTBEAT_STALE_AFTER_MS : CHUNK_STALE_AFTER_MS;
+  const calculatorConnected = ageMs !== null && ageMs <= freshnessWindowMs;
+  const continuity = ageMs === null ? 0 : Math.max(0, Math.min(100, Math.round(100 - (ageMs / freshnessWindowMs) * 100)));
+  const source = path.basename(resolveCompletFile());
+
+  return {
+    status: 'ok',
+    service: 'pi-explorer',
+    timestamp: new Date().toISOString(),
+    uptime_seconds: Math.floor(process.uptime()),
+    last_chunk_at: chunkAt,
+    decimals_calculated: Math.max(piTotal, Number(heartbeat?.digits_done) || 0),
+    decimals_available: piTotal,
+    latest_file: { name: source, url: '/complet' },
+    interruptions: healthState.interruptions,
+    last_interruption_at: healthState.lastInterruptionAt,
+    freshness_threshold_seconds: Math.floor(freshnessWindowMs / 1000),
+    continuity_percent: continuity,
+    connections: {
+      calculator_to_server: {
+        status: calculatorConnected ? 'connected' : (heartbeat ? 'stale' : 'unknown'),
+        last_seen_at: calculatorAt,
+        age_seconds: ageMs === null ? null : Math.floor(ageMs / 1000),
+        heartbeat_at: heartbeat?.timestamp || null,
+        stage: heartbeat?.stage || null,
+        source: heartbeat ? 'heartbeat' : 'last_chunk',
+      },
+      server: { status: 'connected' },
+      production: { status: 'connected' },
+    },
+  };
+}
 
 function snapshotPath(n) {
   return path.join(DATA_DIR, `pi_${n}.txt`);
@@ -262,6 +352,7 @@ async function refreshPiFromFile() {
     const mtime = st.mtime.toISOString();
     if (piLastModified === mtime) return false; // pas de changement
     piLastModified = mtime;
+    await registerChunk(mtime);
 
     const { digits, total } = await readPiComplet();
     const oldTotal = piTotal;
@@ -388,12 +479,14 @@ async function cleanupObsoleteSnapshots() {
 
 /* ── Chargement initial ── */
 async function loadPiFile() {
+  loadHealthState();
   const filePath = resolveCompletFile();
   const { digits, total, lastModified } = readPiFileSync(filePath);
   piDigits = digits;
   piTotal = total;
   piLastModified = lastModified;
   piDistribution = computeDistribution(digits);
+  await registerChunk(lastModified);
   await cleanupObsoleteSnapshots();
   if (total > 0) {
     await ensureSnapshots(digits, total);

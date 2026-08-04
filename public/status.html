@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark light">
+  <title>État du service — PI Explorer</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#07111c; --text:#edf7ff; --muted:#9bb0c4; --line:rgba(202,231,255,.2); --glass:rgba(13,32,49,.58); --glass-strong:rgba(15,39,59,.76); --cyan:#53ddff; --green:#52e19a; --amber:#ffcc68; --red:#ff8393; }
+    [data-theme="light"] { --bg:#eaf5ff; --text:#10243a; --muted:#5f7288; --line:rgba(33,85,126,.18); --glass:rgba(255,255,255,.62); --glass-strong:rgba(255,255,255,.78); --cyan:#008fbd; --green:#118654; --amber:#a66300; --red:#bd2942; }
+    * { box-sizing:border-box; }
+    body { min-height:100vh; font-family:Inter,system-ui,sans-serif; color:var(--text); background:var(--bg); overflow-x:hidden; }
+    body::before, body::after { content:""; position:fixed; pointer-events:none; border-radius:50%; filter:blur(16px); z-index:-1; }
+    body::before { width:46rem; height:46rem; top:-24rem; left:-15rem; background:radial-gradient(circle,rgba(66,202,255,.28),transparent 66%); }
+    body::after { width:40rem; height:40rem; right:-14rem; bottom:-22rem; background:radial-gradient(circle,rgba(137,99,255,.18),transparent 65%); }
+    .navbar { border-bottom:1px solid var(--line); background:var(--glass); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); }
+    .brand-mark { color:var(--cyan); font-family:"JetBrains Mono",monospace; font-size:1.4rem; font-weight:700; text-shadow:0 0 20px color-mix(in srgb,var(--cyan) 55%,transparent); }
+    .brand-name { color:var(--text); font-weight:700; letter-spacing:-.02em; }
+    .glass { background:var(--glass); border:1px solid var(--line); box-shadow:0 18px 50px rgba(0,14,32,.16), inset 0 1px rgba(255,255,255,.09); backdrop-filter:blur(20px) saturate(130%); -webkit-backdrop-filter:blur(20px) saturate(130%); }
+    .hero { border-radius:1.5rem; padding:clamp(1.5rem,5vw,3.25rem); }
+    .eyebrow { color:var(--cyan); font-family:"JetBrains Mono",monospace; letter-spacing:.12em; font-size:.73rem; text-transform:uppercase; }
+    h1 { letter-spacing:-.045em; font-weight:700; }
+    .lead { color:var(--muted); max-width:45rem; }
+    .pill { display:inline-flex; gap:.5rem; align-items:center; border:1px solid var(--line); background:var(--glass-strong); padding:.45rem .75rem; border-radius:999px; font-size:.8rem; font-weight:600; }
+    .dot { width:.55rem; height:.55rem; border-radius:50%; background:var(--green); box-shadow:0 0 13px var(--green); }
+    .metric { min-height:100%; padding:1.25rem; border-radius:1rem; }
+    .metric-label { color:var(--muted); font-size:.76rem; text-transform:uppercase; letter-spacing:.07em; }
+    .metric-value { margin-top:.45rem; font-family:"JetBrains Mono",monospace; font-size:clamp(1.15rem,3vw,1.8rem); font-weight:700; word-break:break-word; }
+    .metric-sub { min-height:1.25rem; color:var(--muted); font-size:.82rem; margin-top:.4rem; }
+    .file-link { color:var(--cyan); text-decoration:none; border-bottom:1px solid color-mix(in srgb,var(--cyan) 50%,transparent); }
+    .file-link:hover { color:var(--text); }
+    .continuity { border-radius:1.25rem; padding:1.5rem; }
+    .route { display:grid; grid-template-columns:auto 1fr auto 1fr auto; align-items:center; gap:.75rem; margin:1.75rem 0 .8rem; }
+    .node { width:2.9rem; height:2.9rem; display:grid; place-items:center; border-radius:50%; background:var(--glass-strong); border:1px solid var(--line); font-size:1.2rem; position:relative; }
+    .node.ok { border-color:color-mix(in srgb,var(--green) 70%,transparent); box-shadow:0 0 20px color-mix(in srgb,var(--green) 25%,transparent); }
+    .node.warn { border-color:color-mix(in srgb,var(--amber) 80%,transparent); }
+    .line { position:relative; height:.55rem; overflow:hidden; border-radius:999px; background:color-mix(in srgb,var(--line) 70%,transparent); }
+    .line > i { display:block; height:100%; width:100%; border-radius:inherit; background:linear-gradient(90deg,var(--green),var(--cyan)); box-shadow:0 0 18px var(--cyan); transform-origin:left; transition:transform .6s ease, background .3s; }
+    .line.stale > i { background:linear-gradient(90deg,var(--amber),var(--red)); box-shadow:none; }
+    .route-labels { display:grid; grid-template-columns:1fr 1fr 1fr; gap:.5rem; color:var(--muted); font-size:.78rem; text-align:center; }
+    .route-labels strong { display:block; color:var(--text); font-size:.85rem; margin-bottom:.12rem; }
+    .connection-card { padding:1.1rem; border-radius:1rem; }
+    .connection-card .small { color:var(--muted); }
+    .state { display:inline-flex; align-items:center; gap:.4rem; color:var(--green); font-size:.78rem; font-weight:600; }
+    .state::before { content:""; width:.45rem; height:.45rem; border-radius:50%; background:currentColor; box-shadow:0 0 8px currentColor; }
+    .state.stale { color:var(--amber); }
+    .theme-toggle { border:1px solid var(--line); background:var(--glass-strong); color:var(--text); border-radius:.7rem; padding:.42rem .65rem; }
+    .theme-toggle:hover { color:var(--cyan); }
+    .updated { color:var(--muted); font-family:"JetBrains Mono",monospace; font-size:.75rem; }
+    footer { color:var(--muted); font-size:.78rem; }
+    @media (max-width:575.98px) { .route { grid-template-columns:auto 1fr auto; gap:.45rem; } .route .line:last-of-type { display:none; } .route .node:last-child { grid-column:3; } .route-labels { font-size:.67rem; } }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-expand px-3 px-md-4 py-3">
+    <div class="container-xl">
+      <a class="navbar-brand d-flex align-items-center gap-2 m-0" href="/" aria-label="Retour à PI Explorer"><span class="brand-mark">π</span><span class="brand-name">PI Explorer</span></a>
+      <div class="d-flex align-items-center gap-2">
+        <span class="pill d-none d-sm-inline-flex"><span class="dot"></span>Service opérationnel</span>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Changer de thème">☀︎ / ☾</button>
+        <a class="btn btn-sm btn-outline-info" href="/">← Retour au site</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container-xl py-4 py-md-5">
+    <section class="hero glass mb-4">
+      <div class="eyebrow mb-2">Tableau de supervision</div>
+      <div class="d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-end">
+        <div><h1 class="display-5 mb-2">État de la retransmission</h1><p class="lead mb-0">Suivi du dernier fichier reçu et de la continuité entre le calculateur, le serveur et la production.</p></div>
+        <div class="updated" id="updatedAt">Actualisation…</div>
+      </div>
+    </section>
+
+    <section class="row g-3 mb-4" aria-label="Indicateurs clés">
+      <div class="col-sm-6 col-xl-3"><div class="metric glass"><div class="metric-label">Dernier chunk reçu</div><div class="metric-value" id="lastChunk">—</div><div class="metric-sub" id="lastChunkSub">En attente de données</div></div></div>
+      <div class="col-sm-6 col-xl-3"><div class="metric glass"><div class="metric-label">Décimales calculées</div><div class="metric-value" id="decimals">—</div><div class="metric-sub" id="decimalsSub">Disponibles dans le fichier actif</div></div></div>
+      <div class="col-sm-6 col-xl-3"><div class="metric glass"><div class="metric-label">Dernier fichier créé</div><div class="metric-value"><a class="file-link" id="latestFile" href="/complet">—</a></div><div class="metric-sub">Téléchargement du fichier actif</div></div></div>
+      <div class="col-sm-6 col-xl-3"><div class="metric glass"><div class="metric-label">Coupures détectées</div><div class="metric-value" id="interruptions">—</div><div class="metric-sub" id="interruptionSub">Depuis la mise en service du suivi</div></div></div>
+    </section>
+
+    <section class="continuity glass mb-4">
+      <div class="d-flex justify-content-between align-items-start gap-3"><div><h2 class="h4 mb-1">Continuité des transferts</h2><p class="mb-0" style="color:var(--muted)">La barre utilise le heartbeat du calculateur ; à défaut, elle reflète la fraîcheur du dernier chunk reçu.</p></div><span class="pill" id="continuityPill">—</span></div>
+      <div class="route" aria-label="Calculateur vers production">
+        <div class="node" id="calculatorNode" title="Calculateur">⌁</div><div class="line" id="lineOne"><i></i></div><div class="node ok" id="serverNode" title="Serveur">▣</div><div class="line" id="lineTwo"><i></i></div><div class="node ok" id="productionNode" title="Production">◉</div>
+      </div>
+      <div class="route-labels"><div><strong>Calculateur</strong><span id="calculatorState">—</span></div><div><strong>Serveur</strong><span id="serverState">—</span></div><div><strong>Production</strong><span id="productionState">—</span></div></div>
+    </section>
+
+    <section class="row g-3" aria-label="Détail des connexions">
+      <div class="col-md-4"><div class="connection-card glass"><div class="d-flex justify-content-between"><strong>Calculateur → serveur</strong><span class="state" id="calculatorBadge">—</span></div><div class="small mt-2" id="calculatorDetail">—</div></div></div>
+      <div class="col-md-4"><div class="connection-card glass"><div class="d-flex justify-content-between"><strong>Serveur</strong><span class="state" id="serverBadge">—</span></div><div class="small mt-2">Processus Express répondant à cette page.</div></div></div>
+      <div class="col-md-4"><div class="connection-card glass"><div class="d-flex justify-content-between"><strong>Production</strong><span class="state" id="productionBadge">—</span></div><div class="small mt-2">Endpoint public disponible via pi.tmktools.com.</div></div></div>
+    </section>
+  </main>
+  <footer class="container-xl py-4 text-center">PI Explorer · Mise à jour automatique toutes les 30 secondes · <a class="file-link" href="/">Retour à l’explorateur</a></footer>
+
+  <script>
+    const byId = id => document.getElementById(id);
+    const nf = new Intl.NumberFormat('fr-FR');
+    const dateFormat = date => date ? new Intl.DateTimeFormat('fr-FR',{dateStyle:'medium',timeStyle:'medium'}).format(new Date(date)) : 'Aucun chunk reçu';
+    const duration = seconds => { if (seconds === null || seconds === undefined) return 'inconnue'; if (seconds < 60) return `il y a ${seconds} s`; if (seconds < 3600) return `il y a ${Math.floor(seconds / 60)} min`; return `il y a ${Math.floor(seconds / 3600)} h`; };
+    function setState(id, state, text) { const el = byId(id); el.textContent = text; el.classList.toggle('stale', state !== 'connected'); }
+    function render(data) {
+      const calculator = data.connections.calculator_to_server;
+      const connected = calculator.status === 'connected';
+      byId('lastChunk').textContent = dateFormat(data.last_chunk_at);
+      byId('lastChunkSub').textContent = calculator.age_seconds === null ? 'En attente de données' : `Reçu ${duration(calculator.age_seconds)}`;
+      byId('decimals').textContent = nf.format(data.decimals_calculated);
+      byId('decimalsSub').textContent = calculator.source === 'heartbeat' ? `${nf.format(data.decimals_available)} dans le dernier fichier reçu` : 'Disponibles dans le fichier actif';
+      byId('latestFile').textContent = data.latest_file.name;
+      byId('latestFile').href = data.latest_file.url;
+      byId('interruptions').textContent = nf.format(data.interruptions);
+      byId('interruptionSub').textContent = data.last_interruption_at ? `Dernière : ${dateFormat(data.last_interruption_at)}` : 'Aucune interruption détectée';
+      byId('continuityPill').innerHTML = `<span class="dot" style="background:${connected ? 'var(--green)' : 'var(--amber)'};box-shadow:0 0 13px ${connected ? 'var(--green)' : 'var(--amber)'}"></span>${connected ? `${data.continuity_percent}% de fraîcheur` : 'Aucun chunk récent'}`;
+      ['calculatorNode','lineOne'].forEach(id => byId(id).classList.toggle('warn', !connected));
+      ['lineOne','lineTwo'].forEach(id => { byId(id).classList.toggle('stale', !connected && id === 'lineOne'); byId(id).querySelector('i').style.transform = `scaleX(${id === 'lineOne' ? data.continuity_percent / 100 : 1})`; });
+      setState('calculatorBadge', calculator.status, connected ? 'Heartbeat actif' : (calculator.source === 'heartbeat' ? 'Heartbeat expiré' : 'Activité inconnue'));
+      setState('serverBadge', 'connected', 'Connecté'); setState('productionBadge', 'connected', 'Connectée');
+      byId('calculatorState').textContent = connected ? 'Heartbeat actif' : (calculator.source === 'heartbeat' ? 'Heartbeat expiré' : 'Aucun chunk récent'); byId('serverState').textContent = 'En ligne'; byId('productionState').textContent = 'En ligne';
+      byId('calculatorDetail').textContent = calculator.last_seen_at ? `Dernier chunk reçu : ${dateFormat(data.last_chunk_at || calculator.last_seen_at)} (${duration(calculator.age_seconds)}).${calculator.stage ? ` Étape : ${calculator.stage}.` : ''}` : 'Aucun fichier reçu.';
+      byId('updatedAt').textContent = `Actualisé à ${new Intl.DateTimeFormat('fr-FR',{timeStyle:'medium'}).format(new Date(data.timestamp))}`;
+    }
+    async function refresh() { try { const response = await fetch('/api/health/data', {cache:'no-store'}); if (!response.ok) throw new Error(); render(await response.json()); } catch { byId('updatedAt').textContent = 'Impossible de joindre le service de statut.'; } }
+    const savedTheme = localStorage.getItem('pi-theme');
+    if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+    byId('themeToggle').addEventListener('click', () => { const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'; document.documentElement.dataset.theme = next; localStorage.setItem('pi-theme', next); });
+    refresh(); setInterval(refresh, 30000);
+  </script>
+</body>
+</html>

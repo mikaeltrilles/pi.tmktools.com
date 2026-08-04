@@ -38,6 +38,8 @@ Le serveur lit automatiquement `data/pi_complet.txt` ou, s'il est plus récent, 
 | Méthode | Route | Description |
 |---------|-------|-------------|
 | GET | `/` | Frontend |
+| GET | `/api/health` | Page de statut du service |
+| GET | `/api/health/data` | Données JSON de supervision |
 | GET | `/stream-continuous` | SSE — retranscription continue des décimales |
 | GET | `/continuous-state` | État courant du fichier lu |
 | GET | `/digit?rank=N` | Décimale au rang N |
