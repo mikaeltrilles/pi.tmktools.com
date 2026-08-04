@@ -75,6 +75,8 @@ REMOTE_CHECKPOINT_PATH = f"{REMOTE_DIR}/pi_checkpoint.json"
 REMOTE_CHECKPOINT_SCP_TARGET = f"{REMOTE_USER}@{REMOTE_HOST}:{REMOTE_CHECKPOINT_PATH}"
 REMOTE_CHECKPOINT_RESTORE_PATH = f"{REMOTE_DIR}/pi_checkpoint_restore.json"
 REMOTE_CHECKPOINT_HISTORY = 10
+# Ignore une configuration SSH systeme invalide et interdit les demandes de mot de passe.
+SSH_OPTIONS = ["-F", "/dev/null", "-o", "BatchMode=yes"]
 
 C = 426880
 K1 = 545140134
@@ -298,7 +300,7 @@ def upload_remote(src: Path) -> bool:
 
         # 1) Transfert vers un fichier temporaire
         result = subprocess.run(
-            ["scp", "-q", str(src), tmp_target],
+            ["scp", *SSH_OPTIONS, "-q", str(src), tmp_target],
             capture_output=True,
             text=True,
             timeout=300,
@@ -309,7 +311,7 @@ def upload_remote(src: Path) -> bool:
 
         # 2) Verification de la taille du fichier temporaire
         result = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", REMOTE_SCP_TARGET.rsplit(":", 1)[0],
+            ["ssh", *SSH_OPTIONS, REMOTE_SCP_TARGET.rsplit(":", 1)[0],
              f"stat -c %s {tmp_path}"],
             capture_output=True,
             text=True,
@@ -325,7 +327,7 @@ def upload_remote(src: Path) -> bool:
 
         # 3) Deplacement atomique vers la destination finale
         result = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", REMOTE_SCP_TARGET.rsplit(":", 1)[0],
+            ["ssh", *SSH_OPTIONS, REMOTE_SCP_TARGET.rsplit(":", 1)[0],
              f"mv {tmp_path} {REMOTE_PATH}"],
             capture_output=True,
             text=True,
@@ -351,7 +353,7 @@ def verify_remote_upload(expected_size: int) -> bool:
     """
     try:
         result = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", REMOTE_SCP_TARGET.rsplit(":", 1)[0],
+            ["ssh", *SSH_OPTIONS, REMOTE_SCP_TARGET.rsplit(":", 1)[0],
              f"stat -c %s {REMOTE_PATH}"],
             capture_output=True,
             text=True,
@@ -417,7 +419,7 @@ def upload_remote_checkpoint(src: Path) -> bool:
 
         # Upload du checkpoint principal
         result = subprocess.run(
-            ["scp", "-q", str(src), REMOTE_CHECKPOINT_SCP_TARGET],
+            ["scp", *SSH_OPTIONS, "-q", str(src), REMOTE_CHECKPOINT_SCP_TARGET],
             capture_output=True,
             text=True,
             timeout=300,
@@ -430,7 +432,7 @@ def upload_remote_checkpoint(src: Path) -> bool:
         history_name = f"pi_checkpoint_{ts}_{digits_done}dec.json"
         history_path = f"{REMOTE_DIR}/{history_name}"
         copy_result = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", f"{REMOTE_USER}@{REMOTE_HOST}",
+            ["ssh", *SSH_OPTIONS, f"{REMOTE_USER}@{REMOTE_HOST}",
              f"cp {REMOTE_CHECKPOINT_PATH} {history_path}"],
             capture_output=True,
             text=True,
@@ -440,7 +442,7 @@ def upload_remote_checkpoint(src: Path) -> bool:
         # Rotation : garder seulement les REMOTE_CHECKPOINT_HISTORY derniers
         if copy_result.returncode == 0 and REMOTE_CHECKPOINT_HISTORY > 0:
             rotate_result = subprocess.run(
-                ["ssh", "-o", "BatchMode=yes", f"{REMOTE_USER}@{REMOTE_HOST}",
+                ["ssh", *SSH_OPTIONS, f"{REMOTE_USER}@{REMOTE_HOST}",
                  f"ls -t {REMOTE_DIR}/pi_checkpoint_*.json 2>/dev/null | tail -n +{REMOTE_CHECKPOINT_HISTORY + 1} | xargs -r rm -f"],
                 capture_output=True,
                 text=True,
@@ -457,7 +459,7 @@ def upload_remote_checkpoint(src: Path) -> bool:
             restore_digits = get_remote_digits_count(REMOTE_CHECKPOINT_RESTORE_PATH)
             if restore_digits is None or digits_done > restore_digits:
                 subprocess.run(
-                    ["ssh", "-o", "BatchMode=yes", f"{REMOTE_USER}@{REMOTE_HOST}",
+                    ["ssh", *SSH_OPTIONS, f"{REMOTE_USER}@{REMOTE_HOST}",
                      f"cp {REMOTE_CHECKPOINT_PATH} {REMOTE_CHECKPOINT_RESTORE_PATH}"],
                     capture_output=True,
                     text=True,
@@ -506,7 +508,7 @@ def get_remote_file_size(remote_path: str) -> Optional[int]:
     """
     try:
         result = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", REMOTE_SCP_TARGET.rsplit(":", 1)[0],
+            ["ssh", *SSH_OPTIONS, REMOTE_SCP_TARGET.rsplit(":", 1)[0],
              f"stat -c %s {remote_path}"],
             capture_output=True,
             text=True,
@@ -527,7 +529,7 @@ def get_remote_digits_count(remote_path: str) -> Optional[int]:
     try:
         target_host = REMOTE_SCP_TARGET.rsplit(":", 1)[0]
         result = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", target_host,
+            ["ssh", *SSH_OPTIONS, target_host,
              f"head -n 20 {remote_path}"],
             capture_output=True,
             text=True,
@@ -547,7 +549,7 @@ def download_remote_file(remote_path: str, local_path: Path) -> bool:
     try:
         target = f"{REMOTE_USER}@{REMOTE_HOST}:{remote_path}"
         result = subprocess.run(
-            ["scp", "-q", target, str(local_path)],
+            ["scp", *SSH_OPTIONS, "-q", target, str(local_path)],
             capture_output=True,
             text=True,
             timeout=300,
@@ -565,7 +567,7 @@ def list_remote_txt_files() -> list[tuple[int, str]]:
     try:
         remote_dir = REMOTE_PATH.rsplit("/", 1)[0]
         result = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", f"{REMOTE_USER}@{REMOTE_HOST}",
+            ["ssh", *SSH_OPTIONS, f"{REMOTE_USER}@{REMOTE_HOST}",
              f"ls -l {remote_dir}/*.txt 2>/dev/null | awk '{{print $5, $NF}}'"],
             capture_output=True,
             text=True,
@@ -737,7 +739,7 @@ def list_remote_checkpoints() -> list[tuple[int, str]]:
     """
     try:
         result = subprocess.run(
-            ["ssh", "-o", "BatchMode=yes", f"{REMOTE_USER}@{REMOTE_HOST}",
+            ["ssh", *SSH_OPTIONS, f"{REMOTE_USER}@{REMOTE_HOST}",
              f"ls -1 {REMOTE_DIR}/pi_checkpoint_*.json 2>/dev/null"],
             capture_output=True,
             text=True,
