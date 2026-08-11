@@ -4,6 +4,8 @@ data/pi_history.log
 data/pi_complet.txt
 data/pi_checkpoint.json
 data/pi_*.txt
+data/calculator_heartbeat.json
+data/health_state.json
 pi_*.txt
 .env
 .DS_Store

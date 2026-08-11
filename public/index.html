@@ -105,8 +105,10 @@ body::before {
 }
 .badge .dot { width:7px; height:7px; border-radius:50%; background:var(--text-faint); }
 .badge.on .dot  { background:var(--red); box-shadow:0 0 8px var(--red); animation:breathe 1.4s infinite; }
-.badge.ok .dot  { background:var(--green); box-shadow:0 0 6px var(--green); }
+.badge.ok .dot  { background:var(--green); box-shadow:0 0 6px var(--green); animation:breathe 2s infinite; }
 .badge.warn .dot{ background:var(--amber); }
+a.badge { text-decoration:none; color:inherit; cursor:pointer; }
+a.badge:hover { border-color:var(--cyan); }
 @keyframes breathe { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.35;transform:scale(.65)} }
 
 .theme-toggle {
@@ -419,6 +421,9 @@ input#customN:focus { border-color:var(--cyan); }
   </div>
 
   <div class="status-bar">
+    <a class="badge" id="calcBadge" href="/api/health" title="État du calculateur — voir le détail">
+      <span class="dot"></span><span id="calcStatusText">Calcul : —</span>
+    </a>
     <div class="badge" id="statusBadge"><span class="dot"></span><span id="statusText">Hors ligne</span></div>
     <button class="theme-toggle" id="themeToggle" type="button" aria-label="Changer de thème" title="Changer de thème">
       <span class="theme-toggle-icon sun" aria-hidden="true">☀</span>
@@ -532,6 +537,26 @@ function setStatus(state) {
   const b = $('statusBadge');
   b.className = 'badge ' + ({ live:'on', connected:'ok', error:'warn', idle:'' }[state] || '');
   $('statusText').textContent = { live:'Retranscription en direct', connected:'Connecté', error:'Erreur', idle:'Hors ligne' }[state] || 'Hors ligne';
+}
+async function updateCalculatorStatus() {
+  const b = $('calcBadge');
+  try {
+    const r = await fetch('/api/health/data', { cache:'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    const calc = data.connections.calculator_to_server;
+    const cls = calc.status === 'connected' ? 'ok' : (calc.status === 'stale' ? 'warn' : '');
+    b.className = 'badge' + (cls ? ' ' + cls : '');
+    $('calcStatusText').textContent = calc.status === 'connected' ? 'Calcul actif'
+      : calc.status === 'stale' ? 'Calcul en pause'
+      : 'Calcul : inconnu';
+    const seen = calc.last_seen_at ? new Date(calc.last_seen_at).toLocaleString('fr-FR') : 'aucun signal reçu';
+    b.title = `Dernier signal du calculateur : ${seen}${calc.stage ? ' · ' + calc.stage : ''} — voir le détail`;
+  } catch {
+    b.className = 'badge';
+    $('calcStatusText').textContent = 'Calcul : inconnu';
+    b.title = 'Impossible de joindre le service de statut — voir le détail';
+  }
 }
 function toggleTheme() {
   const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
@@ -1158,9 +1183,10 @@ async function updateStorage() {
 }
 
 /* ── Init ── Auto-connect au chargement ── */
-scheduleRenderDist(); updateStorage(); loadSnapshots(); setStatus('live');
+scheduleRenderDist(); updateStorage(); loadSnapshots(); setStatus('live'); updateCalculatorStatus();
 connectFileStream();
 setInterval(() => { updateStorage(); loadSnapshots(); }, 15000);
+setInterval(updateCalculatorStatus, 30000);
 </script>
 </body>
 </html>

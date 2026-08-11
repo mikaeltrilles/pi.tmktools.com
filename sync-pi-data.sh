@@ -11,6 +11,8 @@ SOURCE="$SCRIPT_DIR/../PIpi4/pi_complet.txt"
 DEST="$SCRIPT_DIR/data/pi_complet.txt"
 CHECKPOINT_SRC="$SCRIPT_DIR/../PIpi4/pi_checkpoint.json"
 CHECKPOINT_DST="$SCRIPT_DIR/data/pi_checkpoint.json"
+HEARTBEAT_SRC="$SCRIPT_DIR/../PIpi4/calculator_heartbeat.json"
+HEARTBEAT_DST="$SCRIPT_DIR/data/calculator_heartbeat.json"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  🔄 Sync π local : PIpi4 → picalc"
@@ -54,4 +56,11 @@ if [ "$NEED_COPY" = true ]; then
   echo "✅ Copié : $DST_SIZE octets"
   echo "💡 Redémarrez le serveur local (npm start) pour prendre en compte les nouvelles décimales,"
   echo "   ou utilisez le bouton Resync sur le site web."
+fi
+
+# Le heartbeat est toujours resynchronisé (petit fichier, mis à jour toutes les 60s
+# par calculate_pi.py) pour que l'indicateur "Calcul actif" reste juste en local.
+if [ -f "$HEARTBEAT_SRC" ]; then
+  cp "$HEARTBEAT_SRC" "$HEARTBEAT_DST"
+  echo "💓 Heartbeat synchronisé."
 fi
