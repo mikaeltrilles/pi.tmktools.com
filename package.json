@@ -1,7 +1,7 @@
 {
   "name": "pi-tmktools",
   "version": "1.0.0",
-  "description": "Retranscription en temps réel des décimales de Pi depuis un fichier uploadé par Raspberry",
+  "description": "pi.tmktools.com — calculateur Chudnovsky (calculator/) + site de retranscription en temps réel des décimales de Pi",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

@@ -2,16 +2,18 @@
 # deploy-protect-snapshot.sh — Crée et uploade un snapshot protecteur pi_20000000.txt
 # contenant les decimales actuelles de data/pi_complet.txt.
 #
-# Ce snapshot sert de filet de securite : si le Raspberry ecrase accidentellement
+# Ce snapshot sert de filet de securite : si le calculateur ecrase accidentellement
 # pi_complet.txt avec un fichier plus petit, le site web continuera d'afficher
 # le maximum de decimales deja atteint (via pi_20000000.txt, palier valide).
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"   # pi.tmktools.com/
+CALC_DIR="$ROOT_DIR/calculator"
 REMOTE="vote1550@109.234.165.174"
 REMOTE_DIR="/home/vote1550/pi.tmktools.com/data"
-LOCAL_PI="$SCRIPT_DIR/data/pi_complet.txt"
-SNAPSHOT="$SCRIPT_DIR/data/pi_20000000.txt"
+LOCAL_PI="$ROOT_DIR/data/pi_complet.txt"
+SNAPSHOT="$ROOT_DIR/data/pi_20000000.txt"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  🛡️  Snapshot protecteur π"

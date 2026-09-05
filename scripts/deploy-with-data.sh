@@ -1,9 +1,9 @@
 #!/bin/bash
 # deploy-with-data.sh — Déploiement complet : code + données π
-# Usage : ./deploy-with-data.sh [message de commit optionnel]
+# Usage : scripts/deploy-with-data.sh [message de commit optionnel]
 #
 # Ce script :
-#   1. Copie PIpi4/pi_complet.txt dans picalc/data/pi_complet.txt
+#   1. Copie calculator/pi_complet.txt dans data/pi_complet.txt
 #   2. Commit & push le code (sans le gros fichier data/pi_complet.txt, géré par .gitignore)
 #   3. Déploie le code sur le serveur (rsync ou scp)
 #   4. Upload pi_complet.txt sur le serveur de production
@@ -11,14 +11,16 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"   # pi.tmktools.com/
+CALC_DIR="$ROOT_DIR/calculator"
 REMOTE="vote1550@109.234.165.174"
 REMOTE_DIR="/home/vote1550/pi.tmktools.com"
 REMOTE_DATA_DIR="$REMOTE_DIR/data"
 COMMIT_MSG="${1:-deploy(data): $(date '+%Y-%m-%d %H:%M:%S')}"
 
-LOCAL_PIPI4_FILE="$SCRIPT_DIR/../PIpi4/pi_complet.txt"
-LOCAL_DATA_FILE="$SCRIPT_DIR/data/pi_complet.txt"
-LOCAL_CHECKPOINT_FILE="$SCRIPT_DIR/data/pi_checkpoint.json"
+LOCAL_PIPI4_FILE="$CALC_DIR/pi_complet.txt"
+LOCAL_DATA_FILE="$ROOT_DIR/data/pi_complet.txt"
+LOCAL_CHECKPOINT_FILE="$ROOT_DIR/data/pi_checkpoint.json"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  🚀 Déploiement COMPLET pi.tmktools.com"
@@ -34,7 +36,7 @@ fi
 echo "✅ Connexion SSH OK"
 
 # ── Synchronisation locale des données π ─────────
-echo "📂 Synchronisation PIpi4 → picalc/data..."
+echo "📂 Synchronisation calculator → data..."
 if [ -f "$LOCAL_PIPI4_FILE" ]; then
   mkdir -p "$(dirname "$LOCAL_DATA_FILE")"
   cp "$LOCAL_PIPI4_FILE" "$LOCAL_DATA_FILE"
@@ -45,13 +47,13 @@ else
 fi
 
 # Copie optionnelle du checkpoint pour archive locale
-if [ -f "$SCRIPT_DIR/../PIpi4/pi_checkpoint.json" ]; then
-  cp "$SCRIPT_DIR/../PIpi4/pi_checkpoint.json" "$LOCAL_CHECKPOINT_FILE"
+if [ -f "$CALC_DIR/pi_checkpoint.json" ]; then
+  cp "$CALC_DIR/pi_checkpoint.json" "$LOCAL_CHECKPOINT_FILE"
 fi
 
 # ── Commit & push local ──────────────────────────
 echo "📤 Git commit & push..."
-cd "$SCRIPT_DIR"
+cd "$ROOT_DIR"
 git add -A
 
 if git diff --cached --quiet; then
@@ -65,7 +67,7 @@ echo "✅ Code pushé sur GitHub"
 
 # ── Déploiement du code ──────────────────────────
 echo "🌐 Déploiement du code sur le serveur..."
-DEPLOY_FILES=(public server.js ecosystem.config.js package.json package-lock.json .htaccess deploy.sh deploy-with-data.sh sync-pi-data.sh)
+DEPLOY_FILES=(public server.js ecosystem.config.js package.json package-lock.json .htaccess scripts README.md)
 
 if command -v rsync >/dev/null 2>&1; then
   echo "   Utilisation de rsync..."
@@ -74,7 +76,14 @@ if command -v rsync >/dev/null 2>&1; then
     --exclude=data \
     --exclude=logs \
     --exclude=.git \
-    ./ "$REMOTE:$REMOTE_DIR/"
+    --exclude=.claude \
+    --exclude='calculator/pi_*' \
+    --exclude='calculator/*.log' \
+    --exclude='calculator/*.pid' \
+    --exclude='calculator/*.lock' \
+    --exclude='calculator/__pycache__' \
+    --exclude='calculator/calculator_heartbeat.json*' \
+    "$ROOT_DIR/" "$REMOTE:$REMOTE_DIR/"
 else
   echo "   rsync absent — utilisation de scp (fallback)"
   ssh "$REMOTE" "
@@ -82,7 +91,8 @@ else
     mkdir -p $REMOTE_DIR/logs $REMOTE_DIR/data
     cd $REMOTE_DIR
     rm -rf public
-    rm -f server.js ecosystem.config.js package.json package-lock.json .htaccess deploy.sh deploy-with-data.sh sync-pi-data.sh
+    rm -rf scripts
+    rm -f server.js ecosystem.config.js package.json package-lock.json .htaccess README.md
   "
   scp -r -o BatchMode=yes "${DEPLOY_FILES[@]}" "$REMOTE:$REMOTE_DIR/"
 fi

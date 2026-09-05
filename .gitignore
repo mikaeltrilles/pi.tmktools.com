@@ -1,15 +1,48 @@
+# ── Site Node.js ──────────────────────────────────────────────
 node_modules/
-data/pi_digits.txt
-data/pi_history.log
-data/pi_complet.txt
-data/pi_checkpoint.json
-data/pi_*.txt
-data/calculator_heartbeat.json
-data/health_state.json
-pi_*.txt
+logs/
 .env
-.DS_Store
-*.log
 npm-debug.log*
+
+# Données servies par le site (générées / uploadées, jamais versionnées)
+data/*
+!data/.gitkeep
+
+# ── Calculateur (calculator/) : fichiers de travail générés ────
+calculator/pi_complet.txt
+calculator/pi_progress.txt
+calculator/pi_checkpoint.json
+calculator/pi_checkpoint.*
+calculator/pi_calculate.log
+calculator/pi_calculate.err.log
+calculator/pi_calculate.pid
+calculator/pi_calculate.lock
+calculator/pi_rebuild.log
+calculator/pi_rebuild.pid
+calculator/pi_run_*.out
+calculator/calculator_heartbeat.json
+calculator/calculator_heartbeat.json.tmp
+calculator/pi_complet_backup_*.txt
+calculator/*.remote_tmp_*
+calculator/*.remote_checkpoint_tmp
+*.bak
+
+# Anciens fichiers pi à la racine (historique picalc)
+pi_*.txt
+
+# ── Python ────────────────────────────────────────────────────
 __pycache__/
 *.pyc
+*.pyo
+.venv/
+venv/
+
+# ── Sessions / éditeurs / OS ──────────────────────────────────
+.claude/
+.agents/
+.codex/
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store

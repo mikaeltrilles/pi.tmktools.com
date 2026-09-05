@@ -19,6 +19,29 @@ cd "$(dirname "$0")" || exit 1
 # Arguments passes tels quels a python (ex: --digits 50000, --reset, --chunk 500)
 ARGS="$@"
 
+# -----------------------------------------------------------------------------
+# 0. Garde-fou : le service systemd supervise-t-il deja le calcul ?
+# -----------------------------------------------------------------------------
+# Si pi-calculate.service tourne, un lancement manuel creerait un conflit :
+# ce script tuerait le processus supervise, que systemd relancerait aussitot.
+if systemctl --user is-active --quiet pi-calculate.service 2>/dev/null; then
+    echo "=============================================="
+    echo " ⚠️  pi-calculate.service est actif"
+    echo "=============================================="
+    echo "Le calcul est deja supervise par systemd ; un lancement manuel"
+    echo "entrerait en conflit avec lui."
+    echo ""
+    echo "  Redemarrer le calcul      : systemctl --user restart pi-calculate.service"
+    echo "  Arreter le calcul         : systemctl --user stop pi-calculate.service"
+    echo "  Suivre l'etat du service  : systemctl --user status pi-calculate.service"
+    echo ""
+    echo "Pour reprendre la main manuellement (arguments specifiques,"
+    echo "--reset, --digits...), arretez d'abord le service :"
+    echo "  systemctl --user stop pi-calculate.service && ./run_background.sh $ARGS"
+    exit 1
+fi
+
+
 echo "=============================================="
 echo " Lancement controle de calculate_pi.py"
 echo "=============================================="

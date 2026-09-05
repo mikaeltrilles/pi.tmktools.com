@@ -17,6 +17,9 @@ Algorithme incremental : on maintient la somme partielle sous la forme
 S_n = P_n / (-640320^3)^n, ce qui permet d'ajouter des termes par blocs sans
 recalculer la serie depuis le debut a chaque palier.
 
+Emplacement : pi.tmktools.com/calculator/ (le site Node.js vit a la racine
+du meme depot et lit directement calculator/pi_complet.txt en local).
+
 Auteur : PI RasberryPi4
 """
 
@@ -36,9 +39,19 @@ import json
 import datetime
 import argparse
 import subprocess
+import threading
 import unicodedata
 from pathlib import Path
 from typing import Optional
+
+# Tous les fichiers de travail (pi_complet.txt, checkpoint, log, lock...) vivent
+# dans le dossier du script : pi.tmktools.com/calculator/. On s'y place
+# systematiquement pour que le lancement soit independant du repertoire courant
+# (systemd, run_background.sh, PowerShell, appel direct...).
+BASE_DIR = Path(__file__).resolve().parent
+ROOT_DIR = BASE_DIR.parent          # pi.tmktools.com/
+SITE_DATA_DIR = ROOT_DIR / "data"   # donnees lues par server.js (snapshots pi_N.txt)
+os.chdir(BASE_DIR)
 
 # Fuseau horaire Europe/Paris pour les logs et l'en-tete du fichier π
 try:
@@ -59,9 +72,11 @@ PREVIEW_FILE = Path("pi_progress.txt")
 CHECKPOINT_FILE = Path("pi_checkpoint.json")
 LOG_FILE = Path("pi_calculate.log")
 LOCK_FILE = Path("pi_calculate.lock")
+HEARTBEAT_FILE = Path("calculator_heartbeat.json")
 
-# Sources de snapshots locales supplementaires (ex: snapshot protecteur genere par picalc)
-ADDITIONAL_SNAPSHOT_DIRS = [Path("../picalc/data")]
+# Sources de snapshots locales supplementaires : les snapshots pi_N.txt generes
+# par le site (pi.tmktools.com/data/), dont le snapshot protecteur pi_20000000.txt.
+ADDITIONAL_SNAPSHOT_DIRS = [SITE_DATA_DIR]
 AUTHOR = "PI RasberryPi4"
 ALGORITHM = "Chudnovsky (BigInt)"
 
@@ -74,6 +89,8 @@ REMOTE_SCP_TARGET = f"{REMOTE_USER}@{REMOTE_HOST}:{REMOTE_PATH}"
 REMOTE_CHECKPOINT_PATH = f"{REMOTE_DIR}/pi_checkpoint.json"
 REMOTE_CHECKPOINT_SCP_TARGET = f"{REMOTE_USER}@{REMOTE_HOST}:{REMOTE_CHECKPOINT_PATH}"
 REMOTE_CHECKPOINT_RESTORE_PATH = f"{REMOTE_DIR}/pi_checkpoint_restore.json"
+REMOTE_HEARTBEAT_PATH = f"{REMOTE_DIR}/calculator_heartbeat.json"
+REMOTE_HEARTBEAT_SCP_TARGET = f"{REMOTE_USER}@{REMOTE_HOST}:{REMOTE_HEARTBEAT_PATH}"
 REMOTE_CHECKPOINT_HISTORY = 10
 # Ignore une configuration SSH systeme invalide et interdit les demandes de mot de passe.
 SSH_OPTIONS = ["-F", "/dev/null", "-o", "BatchMode=yes"]
@@ -86,6 +103,62 @@ K3_CUBE = K3 ** 3
 DIGITS_PER_TERM = 14.1816474627
 SAFETY_MARGIN = 5
 EXTRA = 10
+HEARTBEAT_INTERVAL_SECONDS = 60
+
+# L'etat est mis a jour par le calcul principal et publie par un thread leger.
+# Il permet au site de savoir que le calculateur tourne meme pendant l'evaluation
+# longue d'un palier, lorsqu'aucun nouveau fichier pi_complet.txt n'est cree.
+heartbeat_stop_event = threading.Event()
+heartbeat_lock = threading.Lock()
+heartbeat_state = {"stage": "initialisation", "digits_done": 0, "n": 0}
+
+
+def update_heartbeat(stage: str, engine=None):
+    with heartbeat_lock:
+        heartbeat_state["stage"] = stage
+        if engine is not None:
+            heartbeat_state["digits_done"] = engine.digits_done
+            heartbeat_state["n"] = engine.n
+
+
+def upload_heartbeat() -> bool:
+    """Publie atomiquement l'activite du calculateur sur le serveur de production."""
+    try:
+        with heartbeat_lock:
+            payload = {
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "pid": os.getpid(),
+                **heartbeat_state,
+            }
+        tmp_local = HEARTBEAT_FILE.with_suffix(".json.tmp")
+        tmp_local.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        tmp_remote = REMOTE_HEARTBEAT_SCP_TARGET + ".tmp"
+        copy_result = subprocess.run(
+            ["scp", *SSH_OPTIONS, "-q", str(tmp_local), tmp_remote],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if copy_result.returncode != 0:
+            return False
+        move_result = subprocess.run(
+            ["ssh", *SSH_OPTIONS, f"{REMOTE_USER}@{REMOTE_HOST}",
+             f"mv {REMOTE_HEARTBEAT_PATH}.tmp {REMOTE_HEARTBEAT_PATH}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if move_result.returncode != 0:
+            return False
+        tmp_local.replace(HEARTBEAT_FILE)
+        return True
+    except Exception:
+        return False
+
+
+def heartbeat_loop():
+    while not heartbeat_stop_event.wait(HEARTBEAT_INTERVAL_SECONDS):
+        upload_heartbeat()
 
 
 def isqrt(n: int) -> int:
@@ -637,7 +710,7 @@ def find_best_snapshot() -> tuple[Optional[Path], int]:
     except Exception:
         pass
 
-    # 3. Snapshots supplementaires locaux (ex: picalc/data/pi_20000000.txt)
+    # 3. Snapshots supplementaires locaux (ex: ../data/pi_20000000.txt)
     try:
         for snapshot_dir in ADDITIONAL_SNAPSHOT_DIRS:
             if not snapshot_dir.exists():
@@ -1003,9 +1076,11 @@ def main_loop(engine: ChudnovskyEngine, chunk_size: int,
 
         log_message(f"\n📦 PALIER #{palier} — Cible : {target_digits} decimales")
 
+        update_heartbeat("calcul des termes", engine)
         reached = compute_palier(engine, target_digits, printer, interrupted_ref)
 
         log_message(f"🧮 Evaluation de π a {reached} decimales...")
+        update_heartbeat("evaluation de pi", engine)
         pi_str = evaluate_pi(engine, reached)
         actual_digits = len(pi_str) - 2
         engine.digits_done = actual_digits
@@ -1015,8 +1090,10 @@ def main_loop(engine: ChudnovskyEngine, chunk_size: int,
         write_preview(pi_str, actual_digits)
 
         log_message(f"💾 Sauvegarde du checkpoint : {CHECKPOINT_FILE}")
+        update_heartbeat("sauvegarde du checkpoint", engine)
         engine.save_checkpoint(CHECKPOINT_FILE)
 
+        update_heartbeat("upload du fichier", engine)
         backup = make_backup(OUTPUT_FILE, actual_digits)
         if backup:
             log_message(f"✅ Backup + upload production termines pour {actual_digits} decimales")
@@ -1194,6 +1271,10 @@ def main():
                         log_message("🚀 Aucun snapshot disponible — demarrage depuis zero")
 
         printer = ProgressPrinter()
+        update_heartbeat("calculateur actif", engine)
+        upload_heartbeat()
+        heartbeat_thread = threading.Thread(target=heartbeat_loop, name="calculator-heartbeat", daemon=True)
+        heartbeat_thread.start()
 
         try:
             main_loop(engine, chunk_size, printer, interrupted_ref, single_run_digits=args.digits)
@@ -1217,6 +1298,9 @@ def main():
         log_message(f"📊 Total decimales   : {engine.digits_done:,}")
         log_message("=" * 60)
     finally:
+        heartbeat_stop_event.set()
+        update_heartbeat("calculateur arrete")
+        upload_heartbeat()
         release_lock()
 
 

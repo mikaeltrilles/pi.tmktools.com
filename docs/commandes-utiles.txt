@@ -1,0 +1,21 @@
+Commandes utiles au quotidien — pi.tmktools.com
+================================================
+
+Depuis /home/mitchlab/Documents/Documents/Developpement/pi.tmktools.com :
+
+# Calculateur (systemd utilisateur)
+systemctl --user status pi-calculate.service        # état
+systemctl --user restart pi-calculate.service       # relance
+systemctl --user stop pi-calculate.service          # arrêt propre (termine le palier en cours)
+tail -f calculator/pi_calculate.log                 # progression
+cat calculator/pi_progress.txt                      # aperçu des 50 premières décimales
+journalctl --user -u pi-calculate.service -n 50     # erreurs inattendues (tracebacks)
+
+# Site local
+npm start                                           # http://localhost:3001 (lit calculator/pi_complet.txt)
+
+# Production (vote1550@109.234.165.174, PM2 sur le port 3001)
+scripts/deploy.sh "message"                         # code seul
+scripts/deploy-with-data.sh "message"               # code + pi_complet.txt
+scripts/remote-status.sh                            # état PM2 / port 3001 / décimales publiées
+ssh -F /dev/null vote1550@109.234.165.174 'cd ~/pi.tmktools.com && npx pm2 restart pi-tmktools'

@@ -1,11 +1,15 @@
 #!/bin/bash
 # deploy.sh — Déploiement π Explorer sur vote1550@109.234.165.174
-# Usage : ./deploy.sh [message de commit optionnel]
+# Usage : scripts/deploy.sh [message de commit optionnel]
 #
 # Fonctionne avec ou sans rsync (fallback scp sur Windows/Git Bash).
 # Déploie uniquement le code Node.js (pas le gros fichier pi_complet.txt).
-# Pour déployer code + données π : voir deploy-with-data.sh
+# Pour déployer code + données π : voir scripts/deploy-with-data.sh
 set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"   # pi.tmktools.com/
+cd "$ROOT_DIR"
 
 REMOTE="vote1550@109.234.165.174"
 REMOTE_DIR="/home/vote1550/pi.tmktools.com"
@@ -63,7 +67,14 @@ if command -v rsync >/dev/null 2>&1; then
     --exclude=data \
     --exclude=logs \
     --exclude=.git \
-    ./ "$REMOTE:$REMOTE_DIR/"
+    --exclude=.claude \
+    --exclude='calculator/pi_*' \
+    --exclude='calculator/*.log' \
+    --exclude='calculator/*.pid' \
+    --exclude='calculator/*.lock' \
+    --exclude='calculator/__pycache__' \
+    --exclude='calculator/calculator_heartbeat.json*' \
+    "$ROOT_DIR/" "$REMOTE:$REMOTE_DIR/"
 else
   echo "   rsync absent — utilisation de scp (fallback)"
   # Nettoyer les fichiers distants déployés avant de les remplacer
@@ -119,4 +130,4 @@ echo "✅ pi.tmktools.com est en ligne sur le port 3001 !"
 echo "🔗 http://pi.tmktools.com"
 echo ""
 echo "💡 Pour déployer également les données π (pi_complet.txt), utilisez :"
-echo "   ./deploy-with-data.sh"
+echo "   scripts/deploy-with-data.sh"

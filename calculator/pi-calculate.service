@@ -1,0 +1,35 @@
+[Unit]
+Description=Calcul infini de Pi (Chudnovsky) - pi.tmktools.com/calculator
+Documentation=file:///home/mitchlab/Documents/Documents/Developpement/pi.tmktools.com/README.md
+After=network-online.target
+Wants=network-online.target
+# Ne jamais abandonner definitivement, meme apres des plantages rapproches.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/home/mitchlab/Documents/Documents/Developpement/pi.tmktools.com/calculator
+ExecStart=/usr/bin/python3 calculate_pi.py
+
+# Relance systematique : plantage, OOM, ou fin inattendue du processus.
+Restart=always
+RestartSec=60
+# Arret propre : le script termine le palier en cours et ecrit son checkpoint
+# sur SIGTERM. Une evaluation a 18M decimales peut durer ~30 min : on laisse
+# le temps necessaire avant que systemd n'envoie SIGKILL (perte du palier).
+KillSignal=SIGTERM
+TimeoutStopSec=2400
+
+# Le script tient lui-meme pi_calculate.log ; stdout est silencieux hors TTY.
+# Le journal ne recoit donc que les erreurs inattendues (tracebacks, lock).
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pi-calculate
+
+# Le calcul est une tache de fond : il ne doit pas rendre la machine inutilisable.
+Nice=5
+IOSchedulingClass=idle
+OOMPolicy=continue
+
+[Install]
+WantedBy=default.target

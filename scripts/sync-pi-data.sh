@@ -1,27 +1,29 @@
 #!/bin/bash
-# sync-pi-data.sh — Synchronisation locale PIpi4/pi_complet.txt → picalc/data/pi_complet.txt
-# Usage : ./sync-pi-data.sh
+# sync-pi-data.sh — Synchronisation locale calculator/pi_complet.txt → data/pi_complet.txt
+# Usage : scripts/sync-pi-data.sh
 #
-# Permet au serveur local picalc d'afficher les dernières décimales calculées
-# par le Raspberry sans avoir besoin de redéployer sur Internet.
+# Note : en local, server.js lit déjà calculator/pi_complet.txt directement ;
+# cette copie sert surtout à préparer un deploy-with-data.sh ou à figer une version.
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE="$SCRIPT_DIR/../PIpi4/pi_complet.txt"
-DEST="$SCRIPT_DIR/data/pi_complet.txt"
-CHECKPOINT_SRC="$SCRIPT_DIR/../PIpi4/pi_checkpoint.json"
-CHECKPOINT_DST="$SCRIPT_DIR/data/pi_checkpoint.json"
-HEARTBEAT_SRC="$SCRIPT_DIR/../PIpi4/calculator_heartbeat.json"
-HEARTBEAT_DST="$SCRIPT_DIR/data/calculator_heartbeat.json"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"   # pi.tmktools.com/
+CALC_DIR="$ROOT_DIR/calculator"
+SOURCE="$CALC_DIR/pi_complet.txt"
+DEST="$ROOT_DIR/data/pi_complet.txt"
+CHECKPOINT_SRC="$CALC_DIR/pi_checkpoint.json"
+CHECKPOINT_DST="$ROOT_DIR/data/pi_checkpoint.json"
+HEARTBEAT_SRC="$CALC_DIR/calculator_heartbeat.json"
+HEARTBEAT_DST="$ROOT_DIR/data/calculator_heartbeat.json"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  🔄 Sync π local : PIpi4 → picalc"
+echo "  🔄 Sync π local : calculator → data"
 echo "  $(date '+%Y-%m-%d %H:%M:%S')"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 if [ ! -f "$SOURCE" ]; then
   echo "❌ Fichier source introuvable : $SOURCE"
-  echo "   Le calculateur PIpi4 n'a pas encore produit de pi_complet.txt."
+  echo "   Le calculateur (calculator/calculate_pi.py) n'a pas encore produit de pi_complet.txt."
   exit 1
 fi
 

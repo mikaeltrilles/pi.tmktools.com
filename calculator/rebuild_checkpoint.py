@@ -28,7 +28,7 @@ DIGITS_PER_TERM = 14.1816474627
 SAFETY_MARGIN = 5
 
 ALGORITHM = "Chudnovsky (BigInt)"
-CHECKPOINT_FILE = Path("pi_checkpoint.json")
+CHECKPOINT_FILE = Path(__file__).resolve().parent / "pi_checkpoint.json"
 
 
 def rebuild(digits: int):

@@ -1,8 +1,9 @@
 /**
  * π Explorer — Backend Node.js/Express
  *
- * Mode affichage depuis fichier pi_complet.txt uploadé par un Raspberry.
- * Le serveur ne calcule plus π ; il lit data/pi_complet.txt et diffuse
+ * Mode affichage depuis le fichier pi_complet.txt produit par calculator/calculate_pi.py
+ * (uploadé dans data/ en production, lu directement dans calculator/ en local).
+ * Le serveur ne calcule pas π ; il lit le fichier le plus fourni et diffuse
  * les décimales aux clients en temps réel.
  */
 
@@ -22,7 +23,10 @@ const DATA_FILE = path.join(DATA_DIR, 'pi_digits.txt');
 const HISTORY_FILE = path.join(DATA_DIR, 'pi_history.log');
 const HEALTH_STATE_FILE = path.join(DATA_DIR, 'health_state.json');
 const COMPLET_FILE = path.join(DATA_DIR, 'pi_complet.txt');
-const EXTERNAL_PI_FILE = process.env.PI_SOURCE_FILE || path.join(__dirname, '..', 'PIpi4', 'pi_complet.txt');
+// Dossier du calculateur (même dépôt) : en local, le serveur lit directement le
+// fichier produit par calculator/calculate_pi.py sans étape de synchronisation.
+const CALCULATOR_DIR = path.join(__dirname, 'calculator');
+const EXTERNAL_PI_FILE = process.env.PI_SOURCE_FILE || path.join(CALCULATOR_DIR, 'pi_complet.txt');
 const SSE_BLOCK_SIZE = 10; // décimales par événement SSE
 const CHUNK_STALE_AFTER_MS = Number(process.env.CHUNK_STALE_AFTER_MS) || 15 * 60 * 1000;
 const HEARTBEAT_STALE_AFTER_MS = Number(process.env.HEARTBEAT_STALE_AFTER_MS) || 3 * 60 * 1000;
@@ -109,15 +113,24 @@ async function registerChunk(lastModified) {
 }
 
 function readCalculatorHeartbeat() {
-  try {
-    const heartbeatPath = path.join(DATA_DIR, 'calculator_heartbeat.json');
-    const heartbeat = JSON.parse(fs.readFileSync(heartbeatPath, 'utf8'));
-    const timestamp = new Date(heartbeat.timestamp);
-    if (Number.isNaN(timestamp.getTime())) return null;
-    return { ...heartbeat, timestamp: timestamp.toISOString() };
-  } catch {
-    return null;
+  // En production, le heartbeat est uploadé dans data/ par le calculateur.
+  // En local, il est écrit directement dans calculator/ : on prend le plus récent.
+  const candidates = [
+    path.join(DATA_DIR, 'calculator_heartbeat.json'),
+    path.join(CALCULATOR_DIR, 'calculator_heartbeat.json'),
+  ];
+  let best = null;
+  for (const heartbeatPath of candidates) {
+    try {
+      const heartbeat = JSON.parse(fs.readFileSync(heartbeatPath, 'utf8'));
+      const timestamp = new Date(heartbeat.timestamp);
+      if (Number.isNaN(timestamp.getTime())) continue;
+      if (!best || timestamp > new Date(best.timestamp)) {
+        best = { ...heartbeat, timestamp: timestamp.toISOString() };
+      }
+    } catch {}
   }
+  return best;
 }
 
 function getHealthReport() {
@@ -175,7 +188,7 @@ function resolveCompletFile() {
 
   // 2) Construire la liste de tous les fichiers candidats :
   //    - pi_complet.txt local
-  //    - pi_complet.txt externe (PIpi4)
+  //    - pi_complet.txt du calculateur (calculator/)
   //    - tous les snapshots pi_NNN.txt locaux
   //    On retourne celui qui contient le plus de décimales. Cela protège le site
   //    contre un pi_complet.txt écrasé par un fichier plus petit : un snapshot
@@ -492,7 +505,7 @@ async function loadPiFile() {
     await ensureSnapshots(digits, total);
     const sourceLabel = path.basename(filePath);
     const isExternal = filePath === EXTERNAL_PI_FILE;
-    console.log(`📄 Chargement initial : ${total.toLocaleString('fr-FR')} décimales depuis ${sourceLabel}${isExternal ? ' (source PIpi4)' : ''}`);
+    console.log(`📄 Chargement initial : ${total.toLocaleString('fr-FR')} décimales depuis ${sourceLabel}${isExternal ? ' (source calculator/)' : ''}`);
   } else {
     console.log('🆕 Aucun fichier pi trouvé — en attente d upload Raspberry');
   }
