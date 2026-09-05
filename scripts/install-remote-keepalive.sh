@@ -13,9 +13,20 @@ ssh "${SSH_OPTS[@]}" "$REMOTE" "mkdir -p $REMOTE_DIR/scripts $REMOTE_DIR/logs"
 echo "📤 Envoi de remote-keepalive.sh..."
 scp "${SSH_OPTS[@]}" -q "$SCRIPT_DIR/remote-keepalive.sh" "$REMOTE:$REMOTE_DIR/scripts/remote-keepalive.sh"
 echo "⏰ Installation du cron (toutes les 5 minutes)..."
+# IMPORTANT : sur cPanel, /usr/bin/crontab est un script wrapper. Enchaîner
+# « ( crontab -l ; echo … ) | crontab - » dans un même tube fait tourner les deux
+# commandes en parallèle et le crontab existant est perdu. On lit donc d'abord
+# dans un fichier, on modifie, puis on installe depuis ce fichier.
 ssh "${SSH_OPTS[@]}" "$REMOTE" "
+  set -e
   chmod +x $REMOTE_DIR/scripts/remote-keepalive.sh
-  ( crontab -l 2>/dev/null | grep -v 'remote-keepalive.sh' ; echo \"$CRON_LINE\" ) | crontab -
+  TMP=\$(mktemp)
+  crontab -l > \"\$TMP\" 2>/dev/null || true
+  cp \"\$TMP\" \"\$HOME/crontab.backup-\$(date +%Y%m%d-%H%M%S)\"
+  grep -v 'remote-keepalive.sh' \"\$TMP\" > \"\$TMP.new\" || true
+  echo \"$CRON_LINE\" >> \"\$TMP.new\"
+  crontab \"\$TMP.new\"
+  rm -f \"\$TMP\" \"\$TMP.new\"
   echo '--- crontab actuel ---'
   crontab -l
 "

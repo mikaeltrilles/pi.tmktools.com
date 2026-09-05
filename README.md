@@ -179,6 +179,8 @@ scripts/install-remote-keepalive.sh    # (ré)installe le script et le cron sur 
 
 Relance manuelle : `ssh -F /dev/null vote1550@109.234.165.174 'cd ~/pi.tmktools.com && npx pm2 startOrRestart ecosystem.config.js && npx pm2 save'`.
 
+> ⚠️ Sur ce serveur cPanel, `/usr/bin/crontab` est un wrapper CageFS : ne jamais enchaîner `( crontab -l ; echo … ) | crontab -` dans un même tube, le crontab existant est perdu. Toujours passer par un fichier : `crontab -l > f ; … ; crontab f`. Le contenu complet attendu du crontab serveur est dans `docs/crontab-serveur.txt` (`crontab ~/pi.tmktools.com/docs/crontab-serveur.txt` le réinstalle intégralement).
+
 ---
 
 ## 🛠️ Architecture du calcul
