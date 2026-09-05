@@ -25,7 +25,7 @@ pi.tmktools.com/
 │   └── favicon.svg
 ├── data/                     → (non versionné) données servies par le site
 │   ├── pi_complet.txt        → copie déployée / uploadée du fichier π
-│   ├── pi_N.txt              → snapshots de paliers (10, 20, …, 20 000 000)
+│   ├── pi_N.txt              → snapshots : 10, 20, …, 900 000 puis UN PAR MILLION (1 M, 2 M, …)
 │   └── calculator_heartbeat.json, health_state.json, pi_history.log
 ├── calculator/
 │   ├── calculate_pi.py       → Programme principal de calcul (mode infini, reprise, upload)
@@ -42,7 +42,6 @@ pi.tmktools.com/
 │   ├── deploy-with-data.sh          → Déploie code + pi_complet.txt
 │   ├── sync-pi-data.sh              → Copie calculator/pi_complet.txt → data/
 │   ├── sync-and-deploy.sh           → sync-pi-data + deploy-with-data
-│   ├── deploy-protect-snapshot.sh   → Régénère et uploade le snapshot protecteur pi_20000000.txt
 │   ├── remote-keepalive.sh          → (côté serveur, cron) relance PM2 si le port 3001 ne répond plus
 │   ├── install-remote-keepalive.sh  → Installe le cron ci-dessus sur le serveur
 │   ├── remote-status.sh             → État PM2 / port / décimales publiées
@@ -74,7 +73,8 @@ Le serveur choisit **toujours la source la plus fournie** parmi `data/pi_complet
 - **💾 Sauvegardes locales** : les 3 dernières copies de `pi_complet.txt` dans `/home/mitchlab/Documents`.
 - **☁️ Upload automatique** de `pi_complet.txt`, du checkpoint (avec historique des 10 derniers) et d'un heartbeat vers `vote1550@109.234.165.174:/home/vote1550/pi.tmktools.com/data/`.
 - **🛡️ Anti-régression** : un fichier local moins avancé n'écrase jamais le distant ; un checkpoint distant plus avancé est adopté au démarrage.
-- **📸 Secours** : sans checkpoint valide, l'état est reconstruit depuis le meilleur snapshot (distant, backups locaux, `data/pi_N.txt` dont le snapshot protecteur `pi_20000000.txt`).
+- **📸 Snapshots** : le site génère `data/pi_N.txt` pour 10, 20, …, 900 000 puis tous les millions de décimales, uniquement quand N décimales existent réellement ; un snapshot dont l'en-tête ne correspond pas à son nom est supprimé au démarrage.
+- **📸 Secours** : sans checkpoint valide, l'état est reconstruit depuis le meilleur snapshot (distant, backups locaux, snapshots `data/pi_N.txt`).
 - **🔒 Verrou** `pi_calculate.lock` contre les doubles instances ; **📝 log** `pi_calculate.log` avec emojis ; **👁️ aperçu** `pi_progress.txt`.
 
 Le script se place lui-même dans `calculator/` au démarrage : il peut être lancé depuis n'importe quel répertoire courant.
@@ -167,7 +167,6 @@ Stack : Node.js 18+ · Express 4 · Vanilla JS · Server-Sent Events.
 scripts/deploy.sh "feat(ui): …"               # code seul (git commit+push, rsync, npm install, pm2 reload)
 scripts/deploy-with-data.sh "deploy(data): …"  # code + pi_complet.txt
 scripts/remote-status.sh                       # état PM2 / port 3001 / décimales
-scripts/deploy-protect-snapshot.sh             # régénère + uploade data/pi_20000000.txt
 ```
 
 ### Surveillance PM2 (anti-503)

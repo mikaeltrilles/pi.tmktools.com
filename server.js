@@ -31,20 +31,29 @@ const SSE_BLOCK_SIZE = 10; // décimales par événement SSE
 const CHUNK_STALE_AFTER_MS = Number(process.env.CHUNK_STALE_AFTER_MS) || 15 * 60 * 1000;
 const HEARTBEAT_STALE_AFTER_MS = Number(process.env.HEARTBEAT_STALE_AFTER_MS) || 3 * 60 * 1000;
 
-const PALIERS = [];
-function generatePaliers() {
-  const max = Number.MAX_SAFE_INTEGER;
-  // Paliers de la forme d × 10^n avec d ∈ [1..9] et n >= 1
-  // → 10, 20, …, 90, 100, 200, …, 900, 1000, 2000, …
-  for (let p = 10; p <= max; p *= 10) {
+/* ── Paliers de snapshots ──
+   - En dessous d'un million : d × 10^n avec d ∈ [1..9] → 10, 20, …, 90, 100, …, 900 000
+   - À partir d'un million : un snapshot TOUS LES MILLIONS → 1 000 000, 2 000 000, …, 18 000 000, …
+   Un snapshot pi_N.txt n'est créé que lorsque N décimales sont réellement disponibles. */
+const SNAPSHOT_STEP = 1_000_000;
+
+function paliersUpTo(total) {
+  const list = [];
+  for (let p = 10; p < SNAPSHOT_STEP; p *= 10) {
     for (let d = 1; d <= 9; d++) {
       const n = d * p;
-      if (n <= max && !PALIERS.includes(n)) PALIERS.push(n);
+      if (n <= total) list.push(n);
     }
   }
-  PALIERS.sort((a, b) => a - b);
+  for (let n = SNAPSHOT_STEP; n <= total; n += SNAPSHOT_STEP) list.push(n);
+  return list;
 }
-generatePaliers();
+
+function isPalier(n) {
+  if (!Number.isInteger(n) || n < 10) return false;
+  if (n >= SNAPSHOT_STEP) return n % SNAPSHOT_STEP === 0;
+  return /^[1-9]0+$/.test(String(n));
+}
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -410,8 +419,7 @@ async function refreshPiFromFile() {
 /* ── Générer / mettre à jour les snapshots de paliers ── */
 async function ensureSnapshots(digits, total) {
   const promises = [];
-  for (const n of PALIERS) {
-    if (n > total) break;
+  for (const n of paliersUpTo(total)) {
     const sp = snapshotPath(n);
     if (fs.existsSync(sp)) continue;
     const slice = digits.slice(0, 2 + n);
@@ -472,17 +480,27 @@ function watchPiFile() {
   fileWatchers.push({ close: () => clearInterval(poll) });
 }
 
-/* ── Nettoyage des snapshots obsolètes ── */
+/* ── Nettoyage des snapshots obsolètes ──
+   Supprime un pi_N.txt si N n'est pas un palier, ou si son en-tête n'annonce
+   pas exactement N décimales (ex. un ancien « snapshot protecteur » pi_20000000.txt
+   qui ne contenait que 13,8 M de décimales). */
 async function cleanupObsoleteSnapshots() {
   try {
     const files = await fs.promises.readdir(DATA_DIR);
-    const valid = new Set(PALIERS.map(n => `pi_${n}.txt`));
     for (const f of files) {
       const m = f.match(/^pi_(\d+)\.txt$/);
       if (!m) continue;
-      if (!valid.has(f)) {
+      const n = parseInt(m[1], 10);
+      let reason = null;
+      if (!isPalier(n)) {
+        reason = 'palier non reconnu';
+      } else {
+        const { total } = readPiHeaderSync(path.join(DATA_DIR, f));
+        if (total !== n) reason = `en-tête ${total.toLocaleString('fr-FR')} décimales ≠ ${n.toLocaleString('fr-FR')}`;
+      }
+      if (reason) {
         await fs.promises.unlink(path.join(DATA_DIR, f));
-        console.log(`🗑 Snapshot obsolète supprimé : ${f}`);
+        console.log(`🗑 Snapshot obsolète supprimé : ${f} (${reason})`);
       }
     }
   } catch (e) {

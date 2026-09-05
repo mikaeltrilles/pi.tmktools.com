@@ -75,7 +75,7 @@ LOCK_FILE = Path("pi_calculate.lock")
 HEARTBEAT_FILE = Path("calculator_heartbeat.json")
 
 # Sources de snapshots locales supplementaires : les snapshots pi_N.txt generes
-# par le site (pi.tmktools.com/data/), dont le snapshot protecteur pi_20000000.txt.
+# par le site (pi.tmktools.com/data/) : un par million de decimales au-dela de 1M.
 ADDITIONAL_SNAPSHOT_DIRS = [SITE_DATA_DIR]
 AUTHOR = "PI RasberryPi4"
 ALGORITHM = "Chudnovsky (BigInt)"
@@ -710,7 +710,7 @@ def find_best_snapshot() -> tuple[Optional[Path], int]:
     except Exception:
         pass
 
-    # 3. Snapshots supplementaires locaux (ex: ../data/pi_20000000.txt)
+    # 3. Snapshots supplementaires locaux (ex: ../data/pi_18000000.txt)
     try:
         for snapshot_dir in ADDITIONAL_SNAPSHOT_DIRS:
             if not snapshot_dir.exists():
