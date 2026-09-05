@@ -1,1192 +1,282 @@
-<!DOCTYPE html>
-<html lang="fr">
+<!doctype html>
+<html lang="fr" data-theme="dark">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PI Explorer — Retranscription en temps réel</title>
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<meta name="description" content="Explorateur professionnel des décimales de Pi.">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Pi — Les décimales de π calculées et retranscrites en temps réel</title>
+  <meta name="description" content="Suivez en direct le calcul des décimales de π : plus de 18 millions de décimales exactes calculées en continu par l’algorithme de Chudnovsky, avec recherche par rang, recherche de suites de chiffres, distribution et snapshots téléchargeables.">
+  <meta name="keywords" content="pi, π, décimales de pi, calcul de pi, Chudnovsky, 3.14159, nombre pi, décimales en temps réel">
+  <meta name="author" content="pi.tmktools.com">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#0b0f14">
+  <meta name="color-scheme" content="dark light">
+  <link rel="canonical" href="https://pi.tmktools.com/">
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&family=JetBrains+Mono:wght@400;700&family=Inter:wght@300..600&display=swap" rel="stylesheet">
-<script>
-  (() => {
-    const savedTheme = localStorage.getItem('pi-theme');
-    if (savedTheme) document.documentElement.dataset.theme = savedTheme;
-  })();
-</script>
+  <!-- Open Graph / Twitter -->
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="fr_FR">
+  <meta property="og:site_name" content="Pi — Décimales de π">
+  <meta property="og:title" content="Pi — Les décimales de π en temps réel">
+  <meta property="og:description" content="Des millions de décimales exactes de π, calculées en continu par l’algorithme de Chudnovsky et retranscrites en direct.">
+  <meta property="og:url" content="https://pi.tmktools.com/">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Pi — Les décimales de π en temps réel">
+  <meta name="twitter:description" content="Des millions de décimales exactes de π, calculées en continu et retranscrites en direct.">
 
-<style>
-/* ════════════════════════════════════════════════════════════════════════════
-   PI EXPLORER — DESIGN SYSTEM COSMOS
-   ════════════════════════════════════════════════════════════════════════════ */
-:root {
-  --bg-deep:       #05080c;
-  --bg-panel:      #0a0f16;
-  --bg-cell:       #0d1420;
-  --bg-cell-alt:   #0f1724;
-  --border-subtle: rgba(255,255,255,0.06);
-  --border-glow:   rgba(0,217,245,0.18);
-  --text-main:     #e8ecf1;
-  --text-dim:      #6b7280;
-  --text-faint:    #374151;
-  --cyan:          #22d3ee;
-  --cyan-dim:      #0891b2;
-  --magenta:       #c084fc;
-  --amber:         #fbbf24;
-  --green:         #4ade80;
-  --red:           #f87171;
-  --pi-glow:       rgba(34,211,238,0.35);
+  <!-- Icônes -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <meta name="application-name" content="Pi">
+  <meta name="apple-mobile-web-app-title" content="Pi">
 
-  --font-display: 'Space Grotesk', sans-serif;
-  --font-mono:    'JetBrains Mono', 'Fira Code', monospace;
-  --font-body:    'Inter', sans-serif;
-}
+  <!-- Polices auto-hébergées -->
+  <link rel="preload" href="/fonts/jetbrains-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles.css">
 
-[data-theme="light"] {
-  --bg-deep:       #edf6ff;
-  --bg-panel:      #ffffff;
-  --bg-cell:       #f4f9ff;
-  --bg-cell-alt:   #eaf3fb;
-  --border-subtle: rgba(22,48,75,0.12);
-  --border-glow:   rgba(0,143,189,0.15);
-  --text-main:     #10243a;
-  --text-dim:      #5f7288;
-  --text-faint:    #8ba0b4;
-  --cyan:          #008fbd;
-  --cyan-dim:      #0d6f90;
-  --magenta:       #a855f7;
-  --amber:         #a66300;
-  --green:         #118654;
-  --red:           #bd2942;
-  --pi-glow:       rgba(0,143,189,0.18);
-}
+  <!-- Thème appliqué avant le premier rendu (évite le scintillement) -->
+  <script src="/theme-init.js"></script>
 
-*,*::before,*::after { box-sizing: border-box; margin:0; }
-html { scroll-behavior: smooth; }
-
-body {
-  font-family: var(--font-body);
-  background: var(--bg-deep);
-  color: var(--text-main);
-  min-height: 100vh;
-  line-height: 1.5;
-  overflow-x: hidden;
-}
-
-body::before {
-  content:''; position: fixed; inset:0; pointer-events:none; z-index:0;
-  background:
-    radial-gradient(ellipse 80% 50% at 20% 40%, rgba(34,211,238,0.04) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 40% at 80% 60%, rgba(192,132,252,0.03) 0%, transparent 55%);
-}
-
-.app { position:relative; z-index:1; max-width:1200px; margin:0 auto; padding:2rem 1.25rem; }
-@media(min-width:1280px){ .app{ max-width:1400px; } }
-
-/* ── Header ── */
-.header {
-  display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;
-  padding-bottom:1.5rem; margin-bottom:1.5rem;
-  border-bottom:1px solid var(--border-subtle);
-}
-.brand { display:flex; align-items:center; gap:0.875rem; }
-.brand svg { width:44px; height:44px; filter:drop-shadow(0 0 8px var(--pi-glow)); }
-.brand h1 { font-family:var(--font-display); font-size:clamp(1.6rem, 4vw, 2.4rem); font-weight:700; letter-spacing:-0.03em; }
-.brand h1 span { color:var(--cyan); text-shadow:0 0 20px var(--pi-glow); }
-.brand .tagline { font-size:0.75rem; color:var(--text-dim); margin-top:0.125rem; letter-spacing:0.05em; }
-
-.status-bar { display:flex; align-items:center; gap:1rem; flex-wrap:wrap; }
-.badge {
-  font-family:var(--font-mono); font-size:0.7rem; padding:0.35rem 0.75rem;
-  border-radius:999px; background:var(--bg-panel); border:1px solid var(--border-subtle);
-  display:inline-flex; align-items:center; gap:0.5rem; transition:.2s;
-}
-.badge .dot { width:7px; height:7px; border-radius:50%; background:var(--text-faint); }
-.badge.on .dot  { background:var(--red); box-shadow:0 0 8px var(--red); animation:breathe 1.4s infinite; }
-.badge.ok .dot  { background:var(--green); box-shadow:0 0 6px var(--green); animation:breathe 2s infinite; }
-.badge.warn .dot{ background:var(--amber); }
-a.badge { text-decoration:none; color:inherit; cursor:pointer; }
-a.badge:hover { border-color:var(--cyan); }
-@keyframes breathe { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.35;transform:scale(.65)} }
-
-.theme-toggle {
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  min-width:2.5rem;
-  font-family:var(--font-mono);
-  border:1px solid var(--border-subtle);
-  background:var(--bg-panel);
-  color:var(--text-main);
-  border-radius:.7rem;
-  padding:.42rem .65rem;
-  transition:.2s;
-}
-.theme-toggle:hover { color:var(--cyan); border-color:var(--cyan); }
-.theme-toggle-icon { display:none; font-size:1rem; line-height:1; }
-:root:not([data-theme="light"]) .theme-toggle-icon.moon,
-:root[data-theme="light"] .theme-toggle-icon.sun { display:inline; }
-
-/* ── Toolbar ── */
-.toolbar {
-  display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center;
-  margin-bottom:1.5rem;
-}
-.toolbar-group { display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center; }
-.preset-group { display:flex; gap:0.375rem; }
-.preset {
-  font-family:var(--font-mono); font-size:0.78rem; padding:0.45rem 0.8rem;
-  border-radius:0.4rem; border:1px solid var(--border-subtle); background:var(--bg-panel);
-  color:var(--text-dim); cursor:pointer; transition:.15s;
-}
-.preset:hover, .preset.active { border-color:var(--cyan); color:var(--cyan); background:rgba(34,211,238,0.08); }
-
-input#customN {
-  width:7.5rem; font-family:var(--font-mono); font-size:0.78rem;
-  padding:0.45rem 0.7rem; border-radius:0.4rem; border:1px solid var(--border-subtle);
-  background:var(--bg-panel); color:var(--text-main); outline:none;
-}
-input#customN:focus { border-color:var(--cyan); }
-
-.btn {
-  font-family:var(--font-display); font-size:0.8rem; font-weight:600;
-  padding:0.5rem 1rem; border-radius:0.45rem; border:1px solid transparent;
-  cursor:pointer; display:inline-flex; align-items:center; gap:0.4rem; transition:.15s;
-}
-.btn:disabled { opacity:.4; cursor:not-allowed; }
-.btn-go        { background:var(--cyan); color:#000; }
-.btn-go:hover:not(:disabled)   { background:#67e8f9; box-shadow:0 0 18px var(--pi-glow); }
-.btn-continuous{ background:linear-gradient(135deg, var(--magenta), #8b5cf6); color:#fff; }
-.btn-continuous:hover:not(:disabled){ box-shadow:0 0 18px rgba(192,132,252,0.4); }
-.btn-stop      { background:var(--red); color:#fff; }
-.btn-save      { background:var(--bg-panel); color:var(--text-main); border-color:var(--border-subtle); }
-.btn-save:hover:not(:disabled){ border-color:var(--green); color:var(--green); background:rgba(74,222,128,0.06); }
-.btn-reset     { background:transparent; color:var(--text-dim); border-color:var(--border-subtle); }
-.btn-reset:hover { color:var(--text-main); border-color:var(--text-dim); }
-.btn-dl        { background:transparent; color:var(--text-dim); border-color:var(--border-subtle); font-size:0.75rem; padding:0.4rem 0.7rem; }
-.btn-dl:hover  { color:var(--cyan); border-color:var(--cyan); }
-
-.mode-badge {
-  font-family:var(--font-mono); font-size:0.65rem; padding:0.2rem 0.5rem;
-  border-radius:0.25rem; background:rgba(34,211,238,0.08); color:var(--cyan);
-  border:1px solid rgba(34,211,238,0.15);
-}
-
-/* ── Live decimal counter ── */
-.counter-section {
-  margin-bottom:1.25rem;
-}
-.live-counter {
-  text-align:left;
-  min-height:5.4rem;
-  display:flex; flex-direction:column; justify-content:flex-end;
-}
-.live-counter .n {
-  font-family:var(--font-mono); font-size:2.4rem; font-weight:700;
-  color:var(--cyan); line-height:1; letter-spacing:-0.02em;
-  text-shadow:0 0 18px rgba(34,211,238,0.25);
-  min-height:2.6rem;
-}
-/* tick désactivé pour éviter le mouvement excessif */
-.live-counter .n.tick { transform: none; }
-.live-counter .label {
-  font-size:0.68rem; color:var(--text-faint); margin-top:0.25rem;
-  letter-spacing:0.06em; text-transform:uppercase;
-}
-.live-counter .words {
-  font-size:1.5rem; font-weight:600; font-style:normal;
-  color:var(--text-main);
-  text-transform:uppercase;
-  letter-spacing:0.04em;
-  margin-top:0.25rem; min-height:2rem;
-}
-
-/* ── Grille de décimales ── */
-.pi-stage {
-  background:var(--bg-panel); border:1px solid var(--border-subtle); border-radius:0.6rem;
-  padding:1.25rem; overflow-x:auto; overflow-y:auto; max-height:60vh; min-height:160px;
-}
-.pi-stage:empty::before {
-  content:"Connexion au fichier en cours… Les décimales apparaîtront ici en temps réel."; color:var(--text-faint);
-  font-size:0.8rem; display:block; text-align:center; padding-top:3rem;
-}
-
-.pi-row { display:flex; align-items:flex-end; justify-content:space-evenly; margin-bottom:0.5rem; }
-.row-label {
-  font-family:var(--font-mono); font-size:0.6rem; color:var(--text-faint);
-  width:2.2rem; text-align:right; padding-right:0.5rem; flex-shrink:0;
-  user-select:none; position:relative; top:-2px;
-}
-.row-label::before { content:"#"; opacity:.5; }
-
-.pi-cell { display:flex; flex-direction:column; align-items:center; flex:1; }
-.pi-digit {
-  font-family:var(--font-mono); font-size:0.95rem; font-weight:700;
-  line-height:1.2; display:block; text-align:center;
-  transition: opacity .1s ease;
-}
-.pi-digit.new {
-  animation: popIn .22s ease both;
-}
-@keyframes popIn { from { opacity:0.5; transform:translateY(2px); } to { opacity:1; transform:translateY(0); } }
-
-/* Décimale active : petite mise en évidence animée */
-.pi-digit.latest {
-  z-index: 10;
-  animation: latestPulse .55s ease forwards;
-}
-@keyframes latestPulse {
-  0% { transform: scale(1.18); filter: brightness(1.5) saturate(1.3); }
-  100% { transform: scale(1); filter: brightness(1) saturate(1); }
-}
-
-.pi-digit.v0 { color:#60a5fa; text-shadow:0 0 6px rgba(96,165,250,0.3); }
-.pi-digit.v1 { color:#34d399; text-shadow:0 0 6px rgba(52,211,153,0.3); }
-.pi-digit.v2 { color:#a78bfa; text-shadow:0 0 6px rgba(167,139,250,0.3); }
-.pi-digit.v3 { color:#f472b6; text-shadow:0 0 6px rgba(244,114,182,0.3); }
-.pi-digit.v4 { color:#fb923c; text-shadow:0 0 6px rgba(251,146,60,0.3); }
-.pi-digit.v5 { color:#facc15; text-shadow:0 0 6px rgba(250,204,21,0.3); }
-.pi-digit.v6 { color:#4ade80; text-shadow:0 0 6px rgba(74,222,128,0.3); }
-.pi-digit.v7 { color:#38bdf8; text-shadow:0 0 6px rgba(56,189,248,0.3); }
-.pi-digit.v8 { color:#e879f9; text-shadow:0 0 6px rgba(232,121,249,0.3); }
-.pi-digit.v9 { color:#f87171; text-shadow:0 0 6px rgba(248,113,113,0.3); }
-
-.pi-rank {
-  font-family:var(--font-mono); font-size:0.5rem; color:var(--text-faint);
-  line-height:1; margin-top:0.15rem; letter-spacing:0.02em; transition:color .2s;
-}
-.pi-cell:hover .pi-rank { color:var(--cyan); }
-.pi-cell:hover .pi-digit { transform:scale(1.35); z-index:5; }
-
-
-.century-rule { display:flex; align-items:center; gap:0.75rem; margin:0.6rem 0; opacity:.7; }
-.century-rule .line { flex:1; height:1px; background:linear-gradient(90deg, transparent, var(--cyan-dim), transparent); }
-.century-rule .text {
-  font-family:var(--font-mono); font-size:0.6rem; color:var(--cyan-dim);
-  border:1px solid rgba(34,211,238,0.2); padding:0.15rem 0.5rem; border-radius:999px;
-}
-
-/* ── Sidebar / Panneau inférieur ── */
-.side { margin-top:1.5rem; display:grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap:1rem; }
-@media(min-width:1024px){
-  .layout { display:grid; grid-template-columns: 1fr 300px; gap:1.5rem; }
-  .side { margin-top:0; display:flex; flex-direction:column; gap:1rem; }
-}
-
-.panel {
-  background:var(--bg-panel); border:1px solid var(--border-subtle); border-radius:0.55rem;
-  padding:1rem 1.1rem;
-}
-.panel h3 {
-  font-family:var(--font-display); font-size:0.78rem; font-weight:600;
-  color:var(--text-main); margin-bottom:0.75rem; display:flex; align-items:center; gap:0.4rem;
-}
-.panel h3 .icon { font-size:1rem; }
-
-/* Distribution */
-.dist-row { display:grid; grid-template-columns: 1.1rem 1fr auto; gap:0.4rem; align-items:center; margin-bottom:0.35rem; }
-.dist-label { font-family:var(--font-mono); font-size:0.6rem; color:var(--text-dim); text-align:center; }
-.dist-track { height:4px; background:rgba(255,255,255,0.04); border-radius:2px; overflow:hidden; }
-.dist-fill  { height:100%; border-radius:2px; transition:width .3s ease; }
-.dist-count { font-family:var(--font-mono); font-size:0.6rem; color:var(--text-dim); min-width:2.5ch; text-align:right; }
-
-/* Storage */
-.storage-info { font-size:0.75rem; color:var(--text-dim); line-height:1.7; }
-.storage-info .val { color:var(--text-main); font-weight:600; font-family:var(--font-mono); }
-
-/* Snapshots list */
-.snapshot-list { display:flex; flex-direction:column; gap:0.35rem; max-height:220px; overflow-y:auto; }
-.snapshot-row {
-  display:flex; justify-content:space-between; align-items:center;
-  padding:0.35rem 0.5rem; border-radius:0.35rem; background:var(--bg-cell);
-  font-family:var(--font-mono); font-size:0.72rem;
-}
-.snapshot-row .n { color:var(--cyan); font-weight:700; }
-.snapshot-row .dl {
-  font-family:var(--font-body); font-size:0.65rem; font-weight:500;
-  color:var(--text-main); background:var(--bg-panel);
-  border:1px solid var(--border-subtle); border-radius:0.35rem;
-  padding:0.25rem 0.55rem; cursor:pointer; transition:.15s;
-  display:inline-flex; align-items:center; gap:0.25rem;
-}
-.snapshot-row .dl:hover { border-color:var(--cyan); color:var(--cyan); background:rgba(34,211,238,0.08); }
-
-/* Rank search */
-.rank-input {
-  width:100%; font-family:var(--font-mono); font-size:0.8rem;
-  padding:0.4rem 0.6rem; border-radius:0.35rem; border:1px solid var(--border-subtle);
-  background:var(--bg-cell); color:var(--text-main); outline:none; margin-bottom:0.5rem;
-}
-.rank-input:focus { border-color:var(--cyan); }
-.rank-out { font-size:0.78rem; color:var(--text-dim); min-height:2rem; }
-.rank-out strong { color:var(--text-main); }
-.rank-out .bigDigit { display:inline-block; font-family:var(--font-mono); font-size:1.4rem; font-weight:700; color:var(--cyan); margin-left:0.3rem; vertical-align:middle; text-shadow:0 0 12px var(--pi-glow); cursor:pointer; }
-.rank-out .bigDigit:hover { color:var(--amber); }
-.rank-out .search-pos { color:var(--cyan); cursor:pointer; text-decoration:underline; text-decoration-color:rgba(34,211,238,0.3); }
-.rank-out .search-pos:hover { color:var(--amber); text-decoration-color:var(--amber); }
-
-/* ── Toast ── */
-#toastBox {
-  position:fixed; bottom:1.25rem; right:1.25rem;
-  display:flex; flex-direction:column; gap:0.4rem;
-  z-index:999; pointer-events:none; align-items:flex-end;
-}
-.toast {
-  padding:0.55rem 1rem;
-  border-radius:0.45rem; font-size:0.8rem; font-weight:500;
-  background:var(--bg-panel); border:1px solid var(--border-subtle);
-  transform:translateX(40px); opacity:0; transition:all .3s ease;
-  pointer-events:auto; max-width:22rem; word-break:break-word;
-}
-.toast.on { transform:translateX(0); opacity:1; }
-.toast-ok { border-color:var(--green); color:var(--green); background:rgba(74,222,128,0.08); }
-.toast-bad{ border-color:var(--red);  color:var(--red);  background:rgba(248,113,113,0.08); }
-.toast-info{ border-color:var(--cyan); color:var(--cyan); background:rgba(34,211,238,0.08); }
-
-/* ── Popin dernière décimale ── */
-.last-digit-popin {
-  position:fixed;
-  bottom:1.25rem; left:50%;
-  transform:translateX(-50%) translateY(20px);
-  opacity:0;
-  transition:all .35s cubic-bezier(.22,1,.36,1);
-  z-index:1000;
-  pointer-events:none;
-}
-.last-digit-popin.on { transform:translateX(-50%) translateY(0); opacity:1; }
-.last-digit-popin .card {
-  background:var(--bg-panel); border:1px solid var(--border-glow);
-  border-radius:0.7rem; padding:0.65rem 1.2rem;
-  box-shadow:0 10px 40px rgba(0,0,0,0.5), 0 0 20px rgba(34,211,238,0.1);
-  text-align:center; min-width:160px;
-}
-.last-digit-popin .label {
-  font-size:0.65rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.06em;
-  margin-bottom:0.3rem;
-}
-.last-digit-popin .value {
-  font-family:var(--font-mono); font-size:2rem; font-weight:700; color:var(--cyan);
-  text-shadow:0 0 18px var(--pi-glow); line-height:1;
-}
-.last-digit-popin .rank {
-  font-family:var(--font-mono); font-size:0.7rem; color:var(--text-dim); margin-top:0.35rem;
-}
-
-/* ── Footer ── */
-.footer {
-  text-align:center; padding:2.5rem 0 1rem; margin-top:2rem;
-  border-top:1px solid var(--border-subtle); font-size:0.68rem; color:var(--text-faint); letter-spacing:0.04em;
-}
-
-::-webkit-scrollbar { width:6px; height:6px; }
-::-webkit-scrollbar-track { background:transparent; }
-::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.08); border-radius:3px; }
-::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,0.14); }
-
-.search-glow { animation: searchPulse 1.8s ease infinite; }
-@keyframes searchPulse { 0%,100%{background:rgba(34,211,238,0.15);box-shadow:0 0 0 2px rgba(34,211,238,0.2)} 50%{background:rgba(34,211,238,0.35);box-shadow:0 0 0 3px rgba(34,211,238,0.4)} }
-</style>
+  <!-- Données structurées -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebApplication",
+        "name": "Pi — Décimales de π en temps réel",
+        "url": "https://pi.tmktools.com/",
+        "description": "Retranscription en direct des décimales de π calculées en continu par l’algorithme de Chudnovsky en arithmétique entière (BigInt).",
+        "applicationCategory": "EducationalApplication",
+        "operatingSystem": "Any",
+        "inLanguage": "fr",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" }
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Qu’est-ce que le nombre π ?",
+            "acceptedAnswer": { "@type": "Answer", "text": "π (pi) est le rapport entre la circonférence d’un cercle et son diamètre. C’est une constante irrationnelle et transcendante dont la valeur commence par 3,14159265358979." }
+          },
+          {
+            "@type": "Question",
+            "name": "Comment les décimales de π sont-elles calculées ?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Un programme externe applique l’algorithme de Chudnovsky en arithmétique entière de précision arbitraire (BigInt), par paliers de 1000 décimales, avec sauvegarde de l’état et transmission du fichier résultat à ce site après chaque palier." }
+          },
+          {
+            "@type": "Question",
+            "name": "Les décimales affichées sont-elles exactes ?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Oui. Chaque palier est calculé avec des chiffres de garde puis tronqué ; un fichier moins avancé ne peut jamais remplacer un fichier plus avancé, ni côté calculateur, ni côté site." }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
 </head>
-
 <body>
-<div id="toastBox"></div>
+  <a class="skip-link" href="#live">Aller aux décimales</a>
 
-<!-- Popin dernière décimale générée -->
-<div id="lastDigitPopin" class="last-digit-popin">
-  <div class="card">
-    <div class="label">Dernière décimale générée</div>
-    <div class="value" id="lastDigitValue">–</div>
-    <div class="rank" id="lastDigitRank">Rang #–</div>
-  </div>
-</div>
-
-<div class="app">
-
-<!-- ═════════════════════ HEADER ═════════════════════ -->
-<header class="header">
-  <div class="brand">
-    <svg viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="22" cy="22" r="20" stroke="rgba(34,211,238,0.12)" stroke-width="1"/>
-      <line x1="8" y1="14" x2="36" y2="14" stroke="var(--cyan)" stroke-width="2.5" stroke-linecap="round"/>
-      <path d="M16 14 Q15 28 13 34" stroke="var(--cyan)" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-      <path d="M28 14 Q29 26 26 34" stroke="var(--cyan)" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-      <circle cx="34" cy="34" r="2.5" fill="var(--amber)"/>
-    </svg>
-    <div>
-      <h1>PI <span>Explorer</span></h1>
-      <div class="tagline">RETRANSMISSION DES DÉCIMALES DE PI — EXPLORATION CONTINUE</div>
-    </div>
-  </div>
-
-  <div class="status-bar">
-    <a class="badge" id="calcBadge" href="/api/health" title="État du calculateur — voir le détail">
-      <span class="dot"></span><span id="calcStatusText">Calcul : —</span>
-    </a>
-    <div class="badge" id="statusBadge"><span class="dot"></span><span id="statusText">Hors ligne</span></div>
-    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Changer de thème" title="Changer de thème">
-      <span class="theme-toggle-icon sun" aria-hidden="true">☀</span>
-      <span class="theme-toggle-icon moon" aria-hidden="true">☾</span>
-    </button>
-  </div>
-</header>
-
-<!-- ═════════════════════ COMPTEUR ═════════════════════ -->
-<section class="counter-section" id="liveCounterWrap" style="display:none;">
-  <div class="live-counter">
-    <div class="n" id="liveCounter">0</div>
-    <div class="label">Décimales retranscrites</div>
-    <div class="words" id="liveCounterWords"></div>
-  </div>
-</section>
-
-<!-- ═════════════════════ TOOLBAR ═════════════════════ -->
-<div class="toolbar">
-  <div class="toolbar-group">
-    <button id="btnReset" class="btn btn-reset">↺ Resync</button>
-  </div>
-</div>
-
-<!-- ═════════════════════ LAYOUT GRILLE + SIDEBAR ═════════════════════ -->
-<div class="layout">
-  <main>
-    <section class="pi-stage" id="piStage" aria-live="polite"></section>
-  </main>
-
-  <aside class="side">
-    <!-- Recherche par position -->
-    <div class="panel">
-      <h3><span class="icon">🔍</span> Chercher une position</h3>
-      <input type="number" id="rankSearch" class="rank-input" min="1" placeholder="Ex : 42">
-      <div class="rank-out" id="rankOut">Entrez un rang pour afficher la décimale correspondante.</div>
-    </div>
-
-    <!-- Recherche par chaîne -->
-    <div class="panel">
-      <h3><span class="icon">🔎</span> Chercher une chaîne</h3>
-      <input type="text" id="chainSearch" class="rank-input" maxlength="20" placeholder="Ex : 14159">
-      <div class="rank-out" id="chainOut">Entrez une chaîne de chiffres (2–20).</div>
-    </div>
-
-    <!-- Distribution -->
-    <div class="panel">
-      <h3><span class="icon">📊</span> Distribution 0–9</h3>
-      <div id="distBox">
-        <div style="color:var(--text-faint);font-size:0.75rem;text-align:center;padding:1rem 0;">Chargement des statistiques…</div>
+  <div class="app">
+    <!-- ═══════════ En-tête ═══════════ -->
+    <header class="header">
+      <div class="brand">
+        <svg class="brand-icon" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+          <circle cx="32" cy="32" r="30" fill="none" stroke="currentColor" stroke-opacity="0.18" stroke-width="1.5"/>
+          <line x1="16" y1="22" x2="50" y2="22" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/>
+          <path d="M25 22 Q24.5 36 21 48" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/>
+          <path d="M40 22 Q41 38 44 46 Q46.5 50 50 46" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/>
+        </svg>
+        <div>
+          <h1 class="brand-title">Nombre <span class="brand-accent">Pi</span></h1>
+          <p class="brand-tagline">Décimales de π calculées et retranscrites en continu</p>
+        </div>
       </div>
-    </div>
-
-    <!-- Snapshots -->
-    <div class="panel">
-      <h3><span class="icon">📁</span> Snapshots</h3>
-      <div class="snapshot-list" id="snapshotList"></div>
-    </div>
-
-    <!-- Stockage -->
-    <div class="panel">
-      <h3><span class="icon">💾</span> Fichier global</h3>
-      <div class="storage-info">
-        <span class="val" id="storedCount">—</span> décimales<br>
-        <span style="font-size:0.65rem;color:var(--text-faint);" id="storedFile">pi_complet.txt</span><br>
-        <span class="val" id="storedDate">—</span><br>
-        <span style="font-size:0.65rem;color:var(--text-dim);">Méthode de calcul : Algorithme Chudnovsky (BigInt)</span>
+      <div class="header-actions">
+        <a class="badge" id="calcBadge" href="/api/health" title="État du calculateur — voir le détail">
+          <span class="dot"></span><span id="calcStatusText">Calcul : —</span>
+        </a>
+        <span class="badge" id="statusBadge" role="status"><span class="dot"></span><span id="statusText">Hors ligne</span></span>
+        <button id="themeToggle" type="button" class="theme-toggle" aria-label="Changer de thème">
+          <span class="theme-icon theme-icon-sun" aria-hidden="true">☀</span>
+          <span class="theme-icon theme-icon-moon" aria-hidden="true">☾</span>
+        </button>
       </div>
-      <div style="display:flex; gap:0.5rem; margin-top:0.6rem;">
-        <button id="btnDlComplet" class="btn btn-dl" style="flex:1;">⬇ Fichier global</button>
-      </div>
-    </div>
-  </aside>
-</div>
+    </header>
 
-<footer class="footer">
-  PI Explorer — Retranscription du fichier pi_complet.txt uploadé par Raspberry · Méthode de calcul : Chudnovsky (BigInt) · Node.js · Express · SSE · <a href="/api/health" style="color:var(--cyan);text-decoration:none;">Statut du service</a> · pi.tmktools.com
-</footer>
+    <main id="main">
+      <!-- ═══════════ Présentation ═══════════ -->
+      <section class="hero" aria-labelledby="heroTitle">
+        <div class="hero-symbol" aria-hidden="true">π</div>
+        <div class="hero-text">
+          <h2 id="heroTitle" class="hero-title">Le nombre π, décimale après décimale</h2>
+          <p class="hero-lead">
+            π (pi) est le rapport entre la circonférence d’un cercle et son diamètre, une constante irrationnelle
+            dont la valeur commence par <span class="mono">3,14159265358979…</span>. Un calculateur dédié en produit
+            de nouvelles décimales en continu, par paliers de mille ; cette page les retranscrit en direct.
+          </p>
+          <p class="formula" aria-label="Formule de Chudnovsky : un sur pi égale douze fois la somme des termes de la série de Chudnovsky">
+            <span class="formula-body">
+              <span class="frac"><span class="num">1</span><span class="den">π</span></span>
+              = 12 <span aria-hidden="true">Σ</span>
+              <span class="frac">
+                <span class="num">(−1)<sup>k</sup> (6k)! (13591409 + 545140134k)</span>
+                <span class="den">(3k)! (k!)<sup>3</sup> 640320<sup>3k + 3/2</sup></span>
+              </span>
+            </span>
+          </p>
+        </div>
+      </section>
 
-</div>
+      <!-- ═══════════ Retranscription en direct ═══════════ -->
+      <section id="live" class="card live" aria-labelledby="liveTitle">
+        <div class="card-head">
+          <div>
+            <h2 id="liveTitle" class="card-title">Retranscription en direct</h2>
+            <p id="liveMeta" class="card-meta">Connexion au fichier π…</p>
+          </div>
+          <div class="card-actions" role="group" aria-label="Actions">
+            <button id="btnReset" type="button" class="btn btn-ghost">
+              <span aria-hidden="true">↻</span> Resynchroniser
+            </button>
+            <a id="btnDownload" class="btn btn-secondary" href="/complet" download="pi_complet.txt">
+              <span aria-hidden="true">⬇</span> Télécharger
+            </a>
+            <button id="btnShare" type="button" class="btn btn-secondary">
+              <span aria-hidden="true">↗</span> Partager
+            </button>
+          </div>
+        </div>
 
-<script>
-/* ════════════════════════════════════════════════════════════════════════════
-   FRONTEND LOGIC — Mode retranscription depuis fichier
-   ════════════════════════════════════════════════════════════════════════════ */
-const $ = id => document.getElementById(id);
+        <div class="counter" aria-live="polite">
+          <span class="counter-label">Décimales retranscrites</span>
+          <span id="liveCounter" class="counter-value">0</span>
+          <span id="liveCounterWords" class="counter-words"></span>
+        </div>
 
-let es = null;
-let allDigits = '3.';
-let count = 0;
-let target = 0;
-let currentRow = null;
-let currentRowStartRank = 1;
-let rowCellCount = 0;
-let fileStreamConnected = false;
-let liveCounterCurrent = 0;
-let liveCounterTarget = 0;
-let liveCounterTimer = null;
+        <div id="piStage" class="digits" tabindex="0" aria-label="Décimales de π" aria-live="off"></div>
+      </section>
 
-/* ── Animation décimale par décimale ── */
-let digitQueue = [];
-let digitRenderTimer = null;
-let latestDigitEl = null;
-const DIGIT_RENDER_DELAY = 45; // ms entre deux décimales affichées
+      <!-- ═══════════ Exploration ═══════════ -->
+      <section class="card explore" aria-labelledby="exploreTitle">
+        <h2 id="exploreTitle" class="card-title">Explorer les décimales</h2>
+        <div class="tool-grid">
+          <div class="tool">
+            <h3>Chercher une position</h3>
+            <label for="rankSearch" class="visually-hidden">Rang de la décimale</label>
+            <input id="rankSearch" class="field-input" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="Exemple : 42">
+            <p id="rankOut" class="tool-out">Entrez un rang pour afficher la décimale correspondante.</p>
+          </div>
+          <div class="tool">
+            <h3>Chercher une suite de chiffres</h3>
+            <label for="chainSearch" class="visually-hidden">Suite de chiffres</label>
+            <input id="chainSearch" class="field-input" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="20" placeholder="Exemple : 14159">
+            <p id="chainOut" class="tool-out">Entrez une suite de 2 à 20 chiffres.</p>
+          </div>
+          <div class="tool">
+            <h3>Distribution des chiffres 0 à 9</h3>
+            <div id="distBox"><p class="tool-out">Chargement des statistiques…</p></div>
+          </div>
+          <div class="tool">
+            <h3>Snapshots</h3>
+            <p class="field-help">Un fichier par palier : 10, 100, 1 000… puis tous les millions de décimales.</p>
+            <div id="snapshotList" class="snapshot-list" aria-label="Snapshots téléchargeables"></div>
+          </div>
+          <div class="tool">
+            <h3>Fichier global</h3>
+            <div class="file-info">
+              <span><span id="storedCount" class="val">—</span> décimales</span>
+              <span>Fichier : <span id="storedFile" class="val">pi_complet.txt</span> (<span id="storedSize" class="val">—</span>)</span>
+              <span>Mis à jour le <span id="storedDate" class="val">—</span></span>
+              <span>Algorithme : Chudnovsky (BigInt)</span>
+            </div>
+          </div>
+        </div>
+      </section>
 
-/* ── Stats client ── */
-let totalClientDigits = 0;       // total reçu pour la vitesse
+      <!-- ═══════════ Pédagogie ═══════════ -->
+      <section class="card knowledge" aria-labelledby="knowledgeTitle">
+        <h2 id="knowledgeTitle" class="card-title">Comprendre le nombre π</h2>
+        <div class="knowledge-grid">
+          <article class="knowledge-item">
+            <h3>Définition</h3>
+            <p>
+              π est le rapport constant entre le périmètre d’un cercle et son diamètre :
+              <span class="mono">π = C / d</span>. C’est aussi l’aire du disque de rayon 1.
+            </p>
+          </article>
+          <article class="knowledge-item">
+            <h3>Irrationnel et transcendant</h3>
+            <p>
+              π ne s’écrit ni comme une fraction (Lambert, 1761) ni comme la racine d’un polynôme à
+              coefficients entiers (Lindemann, 1882). Ses décimales ne se répètent jamais.
+            </p>
+          </article>
+          <article class="knowledge-item">
+            <h3>Algorithme de Chudnovsky</h3>
+            <p>
+              Chaque terme de la série des frères Chudnovsky apporte environ
+              <span class="mono">14,18</span> décimales. C’est la méthode utilisée par tous les records
+              modernes, et par le calculateur de ce site.
+            </p>
+          </article>
+          <article class="knowledge-item">
+            <h3>Calcul incrémental</h3>
+            <p>
+              La somme partielle est conservée sous la forme <span class="mono">S = P / (−640320³)ⁿ</span>,
+              ce qui permet d’ajouter des termes par blocs sans recalculer la série depuis le début.
+            </p>
+          </article>
+          <article class="knowledge-item">
+            <h3>Précision garantie</h3>
+            <p>
+              Tout est calculé en arithmétique entière (BigInt) avec des chiffres de garde, jamais en
+              nombres flottants. Un fichier moins avancé ne remplace jamais un fichier plus avancé.
+            </p>
+          </article>
+          <article class="knowledge-item">
+            <h3>Reprise et sauvegarde</h3>
+            <p>
+              Après chaque palier de 1000 décimales, l’état du calcul est sauvegardé et le fichier
+              complet est transmis au site. Le calcul reprend exactement où il s’était arrêté.
+            </p>
+          </article>
+        </div>
+      </section>
 
-/* ── Utilities ── */
-function setStatus(state) {
-  const b = $('statusBadge');
-  b.className = 'badge ' + ({ live:'on', connected:'ok', error:'warn', idle:'' }[state] || '');
-  $('statusText').textContent = { live:'Retranscription en direct', connected:'Connecté', error:'Erreur', idle:'Hors ligne' }[state] || 'Hors ligne';
-}
-async function updateCalculatorStatus() {
-  const b = $('calcBadge');
-  try {
-    const r = await fetch('/api/health/data', { cache:'no-store' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const data = await r.json();
-    const calc = data.connections.calculator_to_server;
-    const cls = calc.status === 'connected' ? 'ok' : (calc.status === 'stale' ? 'warn' : '');
-    b.className = 'badge' + (cls ? ' ' + cls : '');
-    $('calcStatusText').textContent = calc.status === 'connected' ? 'Calcul actif'
-      : calc.status === 'stale' ? 'Calcul en pause'
-      : 'Calcul : inconnu';
-    const seen = calc.last_seen_at ? new Date(calc.last_seen_at).toLocaleString('fr-FR') : 'aucun signal reçu';
-    b.title = `Dernier signal du calculateur : ${seen}${calc.stage ? ' · ' + calc.stage : ''} — voir le détail`;
-  } catch {
-    b.className = 'badge';
-    $('calcStatusText').textContent = 'Calcul : inconnu';
-    b.title = 'Impossible de joindre le service de statut — voir le détail';
-  }
-}
-function toggleTheme() {
-  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
-  document.documentElement.dataset.theme = next;
-  localStorage.setItem('pi-theme', next);
-}
-let toastTimers = new Map();
-function toast(msg, type='info') {
-  const key = type + '|' + msg;
-  // Éviter les toasts identiques en cours
-  if (toastTimers.has(key)) {
-    clearTimeout(toastTimers.get(key));
-    toastTimers.delete(key);
-  }
-  const t = document.createElement('div');
-  const cls = type==='ok'?'toast-ok':type==='error'?'toast-bad':'toast-info';
-  t.className = `toast ${cls}`;
-  t.textContent = msg;
-  $('toastBox').appendChild(t);
-  requestAnimationFrame(() => t.classList.add('on'));
-  const timer = setTimeout(() => {
-    t.classList.remove('on');
-    setTimeout(() => { t.remove(); toastTimers.delete(key); }, 300);
-  }, 3500);
-  toastTimers.set(key, timer);
-}
-function fmt(n) { return n.toLocaleString('fr-FR'); }
+      <!-- ═══════════ À propos ═══════════ -->
+      <section class="card about" aria-labelledby="aboutTitle">
+        <h2 id="aboutTitle" class="card-title">À propos de l’application</h2>
+        <ul class="about-list">
+          <li><strong>Calcul externe.</strong> Les décimales sont produites par un programme Python dédié, supervisé en permanence, puis transmises au serveur après chaque palier.</li>
+          <li><strong>Retranscription en direct.</strong> Le serveur lit le fichier π et diffuse les nouvelles décimales aux navigateurs connectés (Server-Sent Events).</li>
+          <li><strong>Snapshots.</strong> Chaque palier remarquable est figé dans un fichier téléchargeable, jusqu’au dernier million atteint.</li>
+          <li><strong>Vie privée.</strong> Aucun traceur, aucun cookie, aucune donnée collectée. Le thème choisi reste dans votre navigateur.</li>
+        </ul>
+      </section>
+    </main>
 
-/* ── Scroll vers un rang dans la grille ── */
-async function scrollToRank(rank) {
-  const target = document.querySelector(`.pi-digit[data-rank="${rank}"]`);
-  if (target) {
-    target.scrollIntoView({ behavior:'smooth', block:'center' });
-    target.parentElement.classList.add('search-glow');
-    setTimeout(() => target.parentElement.classList.remove('search-glow'), 2500);
-    return true;
-  }
-  // Hors fenêtre : charger les décimales autour depuis le serveur
-  toast(`Chargement de la zone autour de n°${fmt(rank)}…`, 'info');
-  try {
-    const r = await fetch(`/digits-around?rank=${rank}`);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const { block, offset } = await r.json();
-    if (block) {
-      // Vider la grille et afficher le bloc récupéré
-      $('piStage').innerHTML = '';
-      count = 0; totalClientDigits = 0;
-      currentRow = null; currentRowStartRank = offset + 1; rowCellCount = 0;
-      appendBlock(block, offset);
-      // Essayer de retrouver le rang ciblé
-      const newTarget = document.querySelector(`.pi-digit[data-rank="${rank}"]`);
-      if (newTarget) {
-        newTarget.scrollIntoView({ behavior:'smooth', block:'center' });
-        newTarget.parentElement.classList.add('search-glow');
-        setTimeout(() => newTarget.parentElement.classList.remove('search-glow'), 2500);
-      }
-      return true;
-    }
-  } catch (err) {
-    toast(`Impossible de charger la zone : ${err.message}`, 'error');
-  }
-  return false;
-}
+    <footer class="footer">
+      <p>
+        Pi — décimales de π en temps réel · Algorithme de Chudnovsky (BigInt) ·
+        <a href="/api/health">Statut du service</a> ·
+        <a href="https://phi.tmktools.com" rel="noopener">Voir aussi le nombre d’or φ</a>
+      </p>
+    </footer>
+  </div>
 
-/* ── Distribution (données serveur, calculées sur l’intégralité du fichier) ── */
-let serverDistribution = new Array(10).fill(0);
+  <!-- Notifications -->
+  <div id="toastBox" class="toast-box" role="status" aria-live="polite"></div>
 
-function renderDist() {
-  const total = Math.max(serverTotalDigits, 1);
-  const colors = ['#60a5fa','#34d399','#a78bfa','#f472b6','#fb923c','#facc15','#4ade80','#38bdf8','#e879f9','#f87171'];
+  <!-- Dernière décimale reçue -->
+  <div id="lastDigit" class="last-digit" aria-hidden="true">
+    <span class="last-digit-label">Dernière décimale</span>
+    <span id="lastDigitValue" class="last-digit-value">–</span>
+    <span id="lastDigitRank" class="last-digit-rank">Rang #–</span>
+  </div>
 
-  // Si on n'a pas encore reçu de distribution, garder le message de chargement
-  if (serverTotalDigits === 0 || serverDistribution.every(c => c === 0)) {
-    $('distBox').innerHTML = `
-      <div style="color:var(--text-faint);font-size:0.75rem;text-align:center;padding:1rem 0;">
-        En attente du fichier π…
-      </div>`;
-    return;
-  }
-
-  const rows = serverDistribution.map((c, d) => {
-    const pctReal = total > 0 ? (c / total * 100) : 0;
-    return { d, c, pctReal };
-  });
-  rows.sort((a, b) => b.pctReal - a.pctReal);
-  $('distBox').innerHTML = rows.map(({d, c, pctReal}) => `
-    <div class="dist-row" title="${fmt(c)} occurrences">
-      <span class="dist-label">${d}</span>
-      <div class="dist-track"><div class="dist-fill" style="width:${Math.min(100, pctReal * 2)}%;background:${colors[d]}"></div></div>
-      <span class="dist-count">${pctReal.toFixed(2)}%</span>
-    </div>`).join('');
-}
-
-let distRafPending = false;
-function scheduleRenderDist() {
-  if (distRafPending) return;
-  distRafPending = true;
-  requestAnimationFrame(() => {
-    renderDist();
-    distRafPending = false;
-  });
-}
-
-let firstLoadComplete = false;
-let catchUpRemaining = 0;
-
-function appendBlock(block, offset, totalFromServer = 0) {
-  // Pendant le rattrapage initial, on injecte directement sans animation.
-  const isCatchUp = !firstLoadComplete;
-  if (isCatchUp) {
-    catchUpRemaining += block.length;
-    appendBlockFast(block, offset, totalFromServer);
-    if (liveCounterCurrent >= totalFromServer - 1 || catchUpRemaining >= totalFromServer) {
-      firstLoadComplete = true;
-    }
-  } else {
-    block.split('').forEach((ch, i) => {
-      digitQueue.push({ ch, rank: offset + i + 1 });
-    });
-    if (!digitRenderTimer) scheduleRenderNextDigit();
-  }
-}
-
-function appendBlockFast(block, offset, totalFromServer) {
-  for (let i = 0; i < block.length; i++) {
-    const ch = block[i];
-    const rank = offset + i + 1;
-    if (!currentRow || rowCellCount >= 10) {
-      if (currentRowStartRank > 1 && (currentRowStartRank - 1) % 100 === 0) {
-        const sep = document.createElement('div');
-        sep.className = 'century-rule';
-        sep.innerHTML = '<div class="line"></div><div class="text">'+(currentRowStartRank-1)+'</div><div class="line"></div>';
-        $('piStage').appendChild(sep);
-      }
-      currentRow = document.createElement('div');
-      currentRow.className = 'pi-row';
-      const label = document.createElement('span');
-      label.className = 'row-label';
-      label.textContent = currentRowStartRank;
-      currentRow.appendChild(label);
-      $('piStage').appendChild(currentRow);
-      rowCellCount = 0;
-    }
-    const cell = document.createElement('span');
-    cell.className = 'pi-cell';
-    const digit = document.createElement('span');
-    digit.className = 'pi-digit v' + ch;
-    digit.textContent = ch;
-    digit.dataset.rank = rank;
-    digit.dataset.val = ch;
-    const rk = document.createElement('span');
-    rk.className = 'pi-rank';
-    rk.textContent = rank;
-    cell.appendChild(digit);
-    cell.appendChild(rk);
-    currentRow.appendChild(cell);
-
-    count++;
-    totalClientDigits++;
-    rowCellCount++;
-    if (rowCellCount >= 10) currentRowStartRank = rank + 1;
-    liveCounterCurrent = rank;
-    liveCounterTarget = Math.max(liveCounterTarget, rank);
-  }
-  // Marquer la dernière décimale du bloc
-  const cells = currentRow ? currentRow.querySelectorAll('.pi-digit') : [];
-  if (cells.length) {
-    if (latestDigitEl) latestDigitEl.classList.remove('latest');
-    latestDigitEl = cells[cells.length - 1];
-    latestDigitEl.classList.add('latest');
-  }
-  updateLiveCounterDOM(liveCounterCurrent);
-  scrollToLatest();
-}
-
-function scheduleRenderNextDigit() {
-  if (digitQueue.length === 0) {
-    digitRenderTimer = null;
-    return;
-  }
-  digitRenderTimer = setTimeout(() => {
-    renderNextDigit();
-    scheduleRenderNextDigit();
-  }, DIGIT_RENDER_DELAY);
-}
-
-function renderNextDigit() {
-  if (digitQueue.length === 0) return;
-  const { ch, rank } = digitQueue.shift();
-
-  // Créer une nouvelle ligne si nécessaire
-  if (!currentRow || rowCellCount >= 10) {
-    if (currentRowStartRank > 1 && (currentRowStartRank - 1) % 100 === 0) {
-      const sep = document.createElement('div');
-      sep.className = 'century-rule';
-      sep.innerHTML = '<div class="line"></div><div class="text">'+(currentRowStartRank-1)+'</div><div class="line"></div>';
-      $('piStage').appendChild(sep);
-    }
-    currentRow = document.createElement('div');
-    currentRow.className = 'pi-row';
-    const label = document.createElement('span');
-    label.className = 'row-label';
-    label.textContent = currentRowStartRank;
-    currentRow.appendChild(label);
-    $('piStage').appendChild(currentRow);
-    rowCellCount = 0;
-  }
-
-  const cell = document.createElement('span');
-  cell.className = 'pi-cell';
-  const digit = document.createElement('span');
-  digit.className = 'pi-digit new v' + ch;
-  digit.textContent = ch;
-  setTimeout(() => digit.classList.remove('new'), 200);
-  digit.dataset.rank = rank;
-  digit.dataset.val = ch;
-  const rk = document.createElement('span');
-  rk.className = 'pi-rank';
-  rk.textContent = rank;
-  cell.appendChild(digit);
-  cell.appendChild(rk);
-  currentRow.appendChild(cell);
-
-  // Effet "dernière décimale"
-  if (latestDigitEl) latestDigitEl.classList.remove('latest');
-  latestDigitEl = digit;
-  requestAnimationFrame(() => digit.classList.add('latest'));
-
-  count++;
-  totalClientDigits++;
-  rowCellCount++;
-  if (rowCellCount >= 10) currentRowStartRank = rank + 1;
-
-  liveCounterCurrent = rank;
-  liveCounterTarget = Math.max(liveCounterTarget, rank);
-  updateLiveCounterDOM(rank);
-  showLastDigitPopin(ch, rank);
-
-  // Auto-scroll doux à chaque nouvelle décimale
-  if (latestDigitEl) {
-    latestDigitEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }
-}
-
-function scrollToLatest() {
-  if (latestDigitEl) {
-    latestDigitEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
-  }
-}
-
-/* ── Reset / Resync ── */
-async function hardReset() {
-  intentionalClose = true;
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-  if (digitRenderTimer) { clearTimeout(digitRenderTimer); digitRenderTimer = null; }
-  if (liveCounterTimer) { clearInterval(liveCounterTimer); liveCounterTimer = null; }
-  if (window._statePoll) { clearInterval(window._statePoll); window._statePoll = null; }
-  if (es) { try { es.close(); } catch {} es = null; }
-  $('piStage').innerHTML = '';
-  count = 0; totalClientDigits = 0;
-  catchUpRemaining = 0; allDigits = '3.';
-  currentRow = null; currentRowStartRank = 1; rowCellCount = 0;
-  digitQueue = []; latestDigitEl = null;
-  liveCounterCurrent = 0;
-  liveCounterTarget = 0;
-  firstLoadComplete = false;
-  $('liveCounter').textContent = '0';
-  $('liveCounterWords').textContent = '';
-  $('liveCounterWrap').style.display = 'none';
-  setStatus('idle');
-  serverDistribution = new Array(10).fill(0);
-  serverTotalDigits = 0;
-  renderDist();
-  $('rankOut').textContent = 'Entrez un rang pour afficher la décimale correspondante.';
-  $('chainOut').textContent = 'Entrez une chaîne de chiffres (2–20).';
-  reconnectDelay = 2000;
-
-  // Demander au serveur de rescanner immédiatement le fichier pi_complet.txt
-  toast('Resynchronisation avec le fichier π…', 'info');
-  try {
-    await fetch('/refresh-file', { method: 'POST' });
-  } catch {}
-
-  connectFileStream();
-}
-
-/* ── Snapshots ── */
-async function loadSnapshots() {
-  try {
-    const { snapshots } = await (await fetch('/snapshots')).json();
-    if (!snapshots.length) {
-      $('snapshotList').innerHTML = '<div style="color:var(--text-faint);font-size:.7rem;text-align:center;padding:.5rem;">Aucun snapshot.</div>';
-      return;
-    }
-    $('snapshotList').innerHTML = snapshots.map(s => `
-      <div class="snapshot-row" title="Snapshot π — ${s.n.toLocaleString('fr-FR')} décimales">
-        <span style="font-size:0.65rem;color:var(--text-faint);margin-right:0.2rem;">π</span>
-        <span class="n">${fmt(s.n)}</span>
-        <span style="font-size:0.6rem;color:var(--text-dim);margin-left:auto;padding-right:0.5rem;">décimales</span>
-        <button class="dl" onclick="downloadSnapshot(${s.n})" title="Télécharger le snapshot π${s.n}">📥 Télécharger</button>
-      </div>`).join('');
-  } catch { $('snapshotList').innerHTML = ''; }
-}
-window.downloadSnapshot = async function(n) {
-  const a = document.createElement('a');
-  a.href = `/snapshot/${n}`;
-  a.download = `pi_${n}.txt`;
-  a.click();
-};
-
-/* ════════════════════════════════════════════════════════════════════════════
-   CONNEXION SSE FICHIER — Lecture de pi_complet.txt uploadé par Raspberry
-   ════════════════════════════════════════════════════════════════════════════ */
-let reconnectDelay = 2000;
-let serverTotalDigits = 0;
-let reconnectTimer = null;
-let intentionalClose = false;
-let fileSourceMode = true; // true = lecture depuis pi_complet.txt
-
-function nombreEnLettres(n) {
-  if (n === 0) return 'zéro';
-  const unit = ['','un','deux','trois','quatre','cinq','six','sept','huit','neuf'];
-  const dizaine = ['','dix','vingt','trente','quarante','cinquante','soixante','soixante','quatre-vingt','quatre-vingt'];
-  const teens = ['dix','onze','douze','treize','quatorze','quinze','seize','dix-sept','dix-huit','dix-neuf'];
-  // Groupes par milliers : [nom singulier, pluriel]
-  const groupes = [
-    ['',''],
-    ['mille','mille'],
-    ['million','millions'],
-    ['milliard','milliards'],
-    ['billion','billions'],
-    ['billiard','billiards'],
-    ['trillion','trillions'],
-    ['trilliard','trilliards'],
-    ['quadrillion','quadrillions'],
-    ['quadrilliard','quadrilliards'],
-    ['quintillion','quintillions'],
-    ['quintilliard','quintilliards'],
-    ['sextillion','sextillions'],
-    ['sextilliard','sextilliards'],
-  ];
-
-  // isFinal indique si ce bloc est le dernier (le 'cent' final prend un s au pluriel)
-  function conv(m, isFinal = false) {
-    if (m < 10) return unit[m];
-    if (m < 20) return teens[m - 10];
-    if (m < 70) {
-      const d = Math.floor(m / 10), u = m % 10;
-      return u === 1 ? dizaine[d] + '-et-un' : dizaine[d] + (u > 0 ? '-' + unit[u] : '');
-    }
-    if (m < 80) {
-      const r = m - 60;
-      return r === 1 ? 'soixante-et-onze' : 'soixante-' + conv(r, false);
-    }
-    if (m < 100) {
-      const r = m - 80;
-      return r === 1 ? 'quatre-vingt-un' : 'quatre-vingt' + (r > 0 ? '-' + conv(r, false) : '');
-    }
-    if (m < 1000) {
-      const c = Math.floor(m / 100), r = m % 100;
-      const centStr = c > 1 ? unit[c] + ' cent' : 'cent';
-      if (r > 0) return centStr + ' ' + conv(r, false);
-      if (!isFinal) return centStr; // cent suivi par un groupe supérieur : pas de s
-      return c > 1 ? centStr + 's' : centStr; // cent tout seul = 'cent', deux cents = 'deux cents'
-    }
-    // Découpage par groupes de 1000
-    const parts = [];
-    let reste = m;
-    while (reste > 0) {
-      parts.push(reste % 1000);
-      reste = Math.floor(reste / 1000);
-    }
-    let result = '';
-    for (let i = parts.length - 1; i >= 0; i--) {
-      const val = parts[i];
-      if (val === 0) continue;
-      if (i === 0) {
-        result = result ? result + ' ' + conv(val, true) : conv(val, true);
-      } else if (i === 1) {
-        const milleStr = val > 1 ? conv(val, false) + ' mille' : 'mille';
-        result = result ? result + ' ' + milleStr : milleStr;
-      } else {
-        const [sg, pl] = groupes[i] || ['',''];
-        if (!sg) continue;
-        const grpStr = val > 1 ? conv(val, false) + ' ' + pl : 'un ' + sg;
-        result = result ? result + ' ' + grpStr : grpStr;
-      }
-    }
-    return result || 'zéro';
-  }
-  return conv(n, true);
-}
-
-let lastDigitPopinTimer = null;
-function showLastDigitPopin(ch, rank) {
-  const popin = $('lastDigitPopin');
-  $('lastDigitValue').textContent = ch;
-  $('lastDigitValue').className = 'value v' + ch;
-  $('lastDigitRank').textContent = `Rang #${fmt(rank)}`;
-  popin.classList.add('on');
-  if (lastDigitPopinTimer) clearTimeout(lastDigitPopinTimer);
-  lastDigitPopinTimer = setTimeout(() => popin.classList.remove('on'), 2200);
-}
-
-function updateLiveCounterDOM(n) {
-  const el = $('liveCounter');
-  el.textContent = fmt(n);
-  $('liveCounterWords').textContent = nombreEnLettres(n);
-  $('liveCounterWrap').style.display = 'block';
-  // Tick désactivé : le compteur reste stable
-}
-
-function updateLiveCounter(n) {
-  // Mise à jour immédiate (état initial, reset, state SSE…)
-  liveCounterTarget = n;
-  liveCounterCurrent = n;
-  if (liveCounterTimer) { clearInterval(liveCounterTimer); liveCounterTimer = null; }
-  updateLiveCounterDOM(n);
-}
-
-function bumpLiveCounterTo(n) {
-  // Animation fluide décimale après décimale
-  liveCounterTarget = Math.max(liveCounterTarget, n);
-  if (liveCounterTimer) return; // animation déjà en cours, la cible a été relevée
-  liveCounterTimer = setInterval(() => {
-    if (liveCounterCurrent >= liveCounterTarget) {
-      clearInterval(liveCounterTimer);
-      liveCounterTimer = null;
-      return;
-    }
-    liveCounterCurrent++;
-    updateLiveCounterDOM(liveCounterCurrent);
-  }, 16); // ~60 fps
-}
-
-function connectFileStream() {
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-  if (es) { try { es.close(); } catch {} }
-  setStatus('live');
-
-  // Charger l'état initial de façon stable (compteur + écriture en lettres + distribution)
-  fetch('/continuous-state')
-    .then(r => r.json())
-    .then(st => {
-      serverTotalDigits = st.total_decimals || 0;
-      if (st.distribution && Array.isArray(st.distribution) && st.distribution.length === 10) {
-        serverDistribution = st.distribution;
-      }
-      scheduleRenderDist();
-      liveCounterCurrent = serverTotalDigits;
-      liveCounterTarget = serverTotalDigits;
-      updateLiveCounterDOM(serverTotalDigits);
-    })
-    .catch(() => {});
-
-  es = new EventSource('/stream-continuous');
-
-  es.addEventListener('state', e => {
-    const st = JSON.parse(e.data);
-    serverTotalDigits = st.total_decimals || 0;
-    if (st.distribution && Array.isArray(st.distribution) && st.distribution.length === 10) {
-      serverDistribution = st.distribution;
-    }
-    scheduleRenderDist();
-    // Mise à jour immédiate du compteur sans animation
-    liveCounterCurrent = serverTotalDigits;
-    liveCounterTarget = serverTotalDigits;
-    updateLiveCounterDOM(serverTotalDigits);
-    // Si on arrive avant que fetch /continuous-state ait fini, forcer le rendu immédiat
-    renderDist();
-  });
-
-  es.addEventListener('digits', e => {
-    const { block, offset, total } = JSON.parse(e.data);
-    appendBlock(block, offset, total);
-  });
-
-  es.addEventListener('milestone', e => {
-    const { total_decimals } = JSON.parse(e.data);
-    serverTotalDigits = total_decimals;
-    loadSnapshots();
-    toast(`${fmt(total_decimals)} décimales disponibles`, 'ok');
-  });
-
-  es.addEventListener('reload', e => {
-    const st = JSON.parse(e.data);
-    serverTotalDigits = st.total_decimals || 0;
-    if (st.distribution && Array.isArray(st.distribution) && st.distribution.length === 10) {
-      serverDistribution = st.distribution;
-    }
-    scheduleRenderDist();
-    toast(`Nouveau fichier détecté (${fmt(st.total_decimals)} décimales) — rechargement…`, 'info');
-    setTimeout(() => window.location.reload(), 1200);
-  });
-
-  es.addEventListener('finished', e => {
-    const { total_decimals } = JSON.parse(e.data);
-    setStatus('connected');
-    fileStreamConnected = false;
-    toast(`${fmt(total_decimals)} décimales disponibles`, 'ok');
-  });
-
-  es.onerror = () => {
-    // La reconnexion est gérée dans onclose
-  };
-
-  es.onclose = () => {
-    if (intentionalClose) { intentionalClose = false; return; }
-    fileStreamConnected = false;
-    setStatus('idle');
-    if (document.hidden) {
-      document.addEventListener('visibilitychange', function vis() {
-        document.removeEventListener('visibilitychange', vis);
-        if (!document.hidden) connectFileStream();
-      }, { once: true });
-      return;
-    }
-    reconnectDelay = Math.min(reconnectDelay * 1.5, 30000);
-    reconnectTimer = setTimeout(() => {
-      connectFileStream();
-    }, reconnectDelay);
-  };
-
-  es.onopen = () => {
-    reconnectDelay = 2000;
-    fileStreamConnected = true;
-    // Le statut reste stable : pas de clignotement live au fil des chiffres
-    setStatus('connected');
-  };
-
-  fileStreamConnected = true;
-
-  // Polling de secours toutes les 3 s au cas où l'EventSource serait bloqué
-  if (window._statePoll) clearInterval(window._statePoll);
-  window._statePoll = setInterval(() => {
-    fetch('/continuous-state')
-      .then(r => r.json())
-      .then(st => {
-        serverTotalDigits = st.total_decimals || 0;
-        if (st.distribution && Array.isArray(st.distribution) && st.distribution.length === 10) {
-          serverDistribution = st.distribution;
-        }
-        renderDist();
-      })
-      .catch(() => {});
-  }, 3000);
-}
-
-/* ── Buttons ── */
-$('themeToggle').addEventListener('click', toggleTheme);
-$('btnReset').addEventListener('click', hardReset);
-
-$('btnDlComplet').addEventListener('click', async () => {
-  try {
-    const a = document.createElement('a');
-    a.href = '/complet';
-    a.download = 'pi_complet.txt'; a.click();
-  } catch { toast('Erreur de téléchargement.', 'error'); }
-});
-
-/* ── Rank search ── */
-let searchAbort = null;
-$('rankSearch').addEventListener('input', async (e) => {
-  const rank = parseInt(e.target.value, 10);
-  if (!rank || rank < 1) {
-    $('rankOut').textContent = 'Entrez un rang pour afficher la décimale correspondante.';
-    return;
-  }
-  if (searchAbort) searchAbort.abort();
-  searchAbort = new AbortController();
-  try {
-    const r = await fetch(`/digit?rank=${rank}`, { signal: searchAbort.signal });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const { digit, available } = await r.json();
-    if (digit !== null) {
-      $('rankOut').innerHTML = `Décimale <strong>n°${fmt(rank)}</strong> = <span class="bigDigit v${digit}" onclick="scrollToRank(${rank})" title="Cliquer pour localiser">${digit}</span>`;
-    } else {
-      $('rankOut').textContent = `Décimale n°${fmt(rank)} non encore retranscrite (${fmt(available)} disponibles).`;
-    }
-  } catch (err) {
-    if (err.name !== 'AbortError') {
-      $('rankOut').textContent = 'Erreur de recherche.';
-    }
-  }
-});
-
-/* ── Chain search ── */
-let chainAbort = null;
-$('chainSearch').addEventListener('input', async (e) => {
-  const q = e.target.value.trim();
-  if (!q || q.length < 2 || !/^\d+$/.test(q)) {
-    $('chainOut').textContent = 'Entrez une chaîne de 2 à 20 chiffres.';
-    return;
-  }
-  if (chainAbort) chainAbort.abort();
-  chainAbort = new AbortController();
-  try {
-    const r = await fetch(`/search-chain?q=${encodeURIComponent(q)}`, { signal: chainAbort.signal });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const { positions, total_checked } = await r.json();
-    if (positions.length) {
-      const list = positions.slice(0, 5).map(p => `<span class="search-pos" onclick="scrollToRank(${p})" title="Cliquer pour localiser">#${fmt(p)}</span>`).join(', ');
-      const more = positions.length > 5 ? ` et ${fmt(positions.length - 5)} autres` : '';
-      $('chainOut').innerHTML = `Trouvé ${fmt(positions.length)}×  (vérifié ${fmt(total_checked)} décimales) : ${list}${more}`;
-    } else {
-      $('chainOut').textContent = `Non trouvé dans les ${fmt(total_checked)} décimales vérifiées.`;
-    }
-  } catch (err) {
-    if (err.name !== 'AbortError') {
-      $('chainOut').textContent = 'Erreur de recherche.';
-    }
-  }
-});
-
-/* ── Storage stats ── */
-async function updateStorage() {
-  try {
-    const { total_digits_stored, last_modified, last_computed, file_size_kb, source_file } = await (await fetch('/stats')).json();
-    $('storedCount').textContent = total_digits_stored > 0 ? fmt(total_digits_stored) : '—';
-    const dateSrc = last_modified || last_computed;
-    $('storedDate').textContent = dateSrc ? new Date(dateSrc).toLocaleString('fr-FR') : '—';
-    if (source_file) $('storedFile').textContent = source_file;
-  } catch {}
-}
-
-/* ── Init ── Auto-connect au chargement ── */
-scheduleRenderDist(); updateStorage(); loadSnapshots(); setStatus('live'); updateCalculatorStatus();
-connectFileStream();
-setInterval(() => { updateStorage(); loadSnapshots(); }, 15000);
-setInterval(updateCalculatorStatus, 30000);
-</script>
+  <script src="/app.js" defer></script>
 </body>
 </html>

@@ -20,8 +20,12 @@ pi.tmktools.com/
 ├── ecosystem.config.js       → Configuration PM2 (production)
 ├── .htaccess                 → Apache : proxy inverse de tout le site vers Node (port 3001)
 ├── public/
-│   ├── index.html            → Frontend tout-en-un
+│   ├── index.html            → Page principale (retranscription en direct, exploration, pédagogie)
 │   ├── status.html           → Page d'état du service (/api/health)
+│   ├── styles.css            → Système de design partagé avec phi.tmktools.com (accent cyan pour π)
+│   ├── app.js                → Logique du frontend (SSE, compteur, grille, recherches, snapshots)
+│   ├── theme-init.js         → Thème clair/sombre appliqué avant le premier rendu (clé « pi-theme »)
+│   ├── fonts/                → Space Grotesk et JetBrains Mono auto-hébergées
 │   └── favicon.svg
 ├── data/                     → (non versionné) données servies par le site
 │   ├── pi_complet.txt        → copie déployée / uploadée du fichier π
@@ -138,6 +142,10 @@ PI_SOURCE_FILE=/chemin/pi_complet.txt npm start   # forcer une source
 ```
 
 Stack : Node.js 18+ · Express 4 · Vanilla JS · Server-Sent Events.
+
+### Design partagé avec phi.tmktools.com
+
+L'interface reprend à l'identique le système de design de [phi.tmktools.com](https://phi.tmktools.com) (calculateur du nombre d'or) pour que les deux sites soient homogènes : mêmes jetons (fonds `#0b0f14` / `#f6f4ee`, bordures, rayons, ombres), mêmes polices auto-hébergées (Space Grotesk, JetBrains Mono), mêmes composants (en-tête avec marque, hero avec symbole et formule, cartes, boutons, badges, bascule de thème, toasts, grille pédagogique, pied de page croisé). Seul l'accent diffère : **cyan pour π**, doré pour φ. Le thème suit la préférence système par défaut et le choix manuel est mémorisé dans `localStorage` (`pi-theme`). Aucune ressource externe n'est chargée (polices et styles servis par le site).
 
 ### Routes API
 
