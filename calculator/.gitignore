@@ -1,0 +1,33 @@
+# Fichiers générés par le calcul
+pi_complet.txt
+pi_progress.txt
+pi_checkpoint.json
+pi_calculate.log
+pi_calculate.err.log
+pi_calculate.pid
+pi_calculate.lock
+pi_rebuild.log
+pi_rebuild.pid
+
+# Sauvegardes locales
+pi_complet_backup_*.txt
+*.bak
+*.remote_checkpoint_tmp
+
+# Dossiers et fichiers de session
+.claude/
+EOF
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Éditeurs
+.vscode/
+.idea/
+*.swp
+*~
