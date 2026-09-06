@@ -322,9 +322,9 @@
   async function loadSnapshots() {
     try {
       const { snapshots } = await (await fetch('/snapshots')).json();
-      if (!snapshots.length) { $('snapshotList').innerHTML = '<p class="tool-out">Aucun snapshot.</p>'; return; }
+      if (!snapshots.length) { $('snapshotList').innerHTML = '<p class="tool-out">Aucun palier figé pour le moment.</p>'; return; }
       $('snapshotList').innerHTML = snapshots.slice().reverse().map((s) => `
-        <div class="snapshot-row" title="Snapshot π — ${fmt(s.n)} décimales">
+        <div class="snapshot-row" title="Dernier palier — ${fmt(s.n)} décimales">
           <span class="n">${fmt(s.n)}</span>
           <span class="unit">décimales</span>
           <a class="btn btn-secondary btn-sm" href="/snapshot/${s.n}" download="pi_${s.n}.txt"><span aria-hidden="true">⬇</span> Télécharger</a>

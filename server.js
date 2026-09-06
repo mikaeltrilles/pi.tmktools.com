@@ -31,28 +31,24 @@ const SSE_BLOCK_SIZE = 10; // décimales par événement SSE
 const CHUNK_STALE_AFTER_MS = Number(process.env.CHUNK_STALE_AFTER_MS) || 15 * 60 * 1000;
 const HEARTBEAT_STALE_AFTER_MS = Number(process.env.HEARTBEAT_STALE_AFTER_MS) || 3 * 60 * 1000;
 
-/* ── Paliers de snapshots ──
-   - En dessous d'un million : d × 10^n avec d ∈ [1..9] → 10, 20, …, 90, 100, …, 900 000
-   - À partir d'un million : un snapshot TOUS LES MILLIONS → 1 000 000, 2 000 000, …, 18 000 000, …
-   Un snapshot pi_N.txt n'est créé que lorsque N décimales sont réellement disponibles. */
+/* ── Snapshot du dernier palier ──
+   Un seul fichier pi_N.txt est conservé : celui du DERNIER palier atteint.
+   - En dessous d'un million : paliers d × 10^n (10, 20, …, 90, 100, …, 900 000)
+   - À partir d'un million : un palier tous les millions (1 000 000, 2 000 000, …)
+   Quand un nouveau palier est atteint, son snapshot est créé et les précédents
+   sont supprimés (ils restent reconstructibles depuis pi_complet.txt). */
 const SNAPSHOT_STEP = 1_000_000;
 
-function paliersUpTo(total) {
-  const list = [];
+function latestPalier(total) {
+  if (total >= SNAPSHOT_STEP) return Math.floor(total / SNAPSHOT_STEP) * SNAPSHOT_STEP;
+  let best = 0;
   for (let p = 10; p < SNAPSHOT_STEP; p *= 10) {
     for (let d = 1; d <= 9; d++) {
       const n = d * p;
-      if (n <= total) list.push(n);
+      if (n <= total) best = n;
     }
   }
-  for (let n = SNAPSHOT_STEP; n <= total; n += SNAPSHOT_STEP) list.push(n);
-  return list;
-}
-
-function isPalier(n) {
-  if (!Number.isInteger(n) || n < 10) return false;
-  if (n >= SNAPSHOT_STEP) return n % SNAPSHOT_STEP === 0;
-  return /^[1-9]0+$/.test(String(n));
+  return best;
 }
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -416,28 +412,30 @@ async function refreshPiFromFile() {
   }
 }
 
-/* ── Générer / mettre à jour les snapshots de paliers ── */
+/* ── Générer le snapshot du dernier palier et retirer les précédents ── */
 async function ensureSnapshots(digits, total) {
-  const promises = [];
-  for (const n of paliersUpTo(total)) {
-    const sp = snapshotPath(n);
-    if (fs.existsSync(sp)) continue;
+  const n = latestPalier(total);
+  if (n <= 0) return;
+  const sp = snapshotPath(n);
+  let created = false;
+  if (!fs.existsSync(sp)) {
     const slice = digits.slice(0, 2 + n);
     const header = [
       '# Pi Digits made with ♥ by PI Explorer',
       `# Généré le : ${new Date().toISOString()}`,
       `# Nombre total de décimales : ${n}`,
-      '# Source : pi_complet.txt uploadé par Raspberry',
+      '# Source : pi_complet.txt du calculateur',
       '#',
       slice,
       ''
     ].join('\n');
-    promises.push(fs.promises.writeFile(sp, header, 'utf8'));
+    const tmp = sp + '.tmp';
+    await fs.promises.writeFile(tmp, header, 'utf8');
+    await fs.promises.rename(tmp, sp);
+    created = true;
   }
-  if (promises.length) {
-    await Promise.all(promises);
-    broadcastFile('milestone', { total_decimals: total });
-  }
+  await cleanupObsoleteSnapshots(n);
+  if (created) broadcastFile('milestone', { total_decimals: total });
 }
 
 /* ── Broadcast SSE aux clients fichier ── */
@@ -481,10 +479,10 @@ function watchPiFile() {
 }
 
 /* ── Nettoyage des snapshots obsolètes ──
-   Supprime un pi_N.txt si N n'est pas un palier, ou si son en-tête n'annonce
-   pas exactement N décimales (ex. un ancien « snapshot protecteur » pi_20000000.txt
-   qui ne contenait que 13,8 M de décimales). */
-async function cleanupObsoleteSnapshots() {
+   Ne conserve que pi_<keep>.txt (le dernier palier). Supprime tout autre pi_N.txt,
+   ainsi qu'un fichier dont l'en-tête n'annonce pas exactement N décimales
+   (ex. un ancien « snapshot protecteur » pi_20000000.txt qui n'en contenait que 13,8 M). */
+async function cleanupObsoleteSnapshots(keep) {
   try {
     const files = await fs.promises.readdir(DATA_DIR);
     for (const f of files) {
@@ -492,8 +490,8 @@ async function cleanupObsoleteSnapshots() {
       if (!m) continue;
       const n = parseInt(m[1], 10);
       let reason = null;
-      if (!isPalier(n)) {
-        reason = 'palier non reconnu';
+      if (n !== keep) {
+        reason = `palier précédent (seul pi_${keep}.txt est conservé)`;
       } else {
         const { total } = readPiHeaderSync(path.join(DATA_DIR, f));
         if (total !== n) reason = `en-tête ${total.toLocaleString('fr-FR')} décimales ≠ ${n.toLocaleString('fr-FR')}`;
@@ -518,7 +516,6 @@ async function loadPiFile() {
   piLastModified = lastModified;
   piDistribution = computeDistribution(digits);
   await registerChunk(lastModified);
-  await cleanupObsoleteSnapshots();
   if (total > 0) {
     await ensureSnapshots(digits, total);
     const sourceLabel = path.basename(filePath);

@@ -193,9 +193,9 @@
             <div id="distBox"><p class="tool-out">Chargement des statistiques…</p></div>
           </div>
           <div class="tool">
-            <h3>Snapshots</h3>
-            <p class="field-help">Un fichier par palier : 10, 100, 1 000… puis tous les millions de décimales.</p>
-            <div id="snapshotList" class="snapshot-list" aria-label="Snapshots téléchargeables"></div>
+            <h3>Dernier palier</h3>
+            <p class="field-help">Un seul fichier figé est conservé : celui du dernier million de décimales atteint. Il est remplacé à chaque nouveau palier.</p>
+            <div id="snapshotList" class="snapshot-list" aria-label="Snapshot du dernier palier"></div>
           </div>
           <div class="tool">
             <h3>Fichier global</h3>
@@ -265,7 +265,7 @@
         <ul class="about-list">
           <li><strong>Calcul externe.</strong> Les décimales sont produites par un programme Python dédié, supervisé en permanence, puis transmises au serveur après chaque palier.</li>
           <li><strong>Retranscription en direct.</strong> Le serveur lit le fichier π et diffuse les nouvelles décimales aux navigateurs connectés (Server-Sent Events).</li>
-          <li><strong>Snapshots.</strong> Chaque palier remarquable est figé dans un fichier téléchargeable, jusqu’au dernier million atteint.</li>
+          <li><strong>Dernier palier.</strong> Le dernier million de décimales atteint est figé dans un fichier téléchargeable, remplacé à chaque nouveau palier.</li>
           <li><strong>Vie privée.</strong> Aucun traceur, aucun cookie, aucune donnée collectée. Le thème choisi reste dans votre navigateur.</li>
         </ul>
       </section>

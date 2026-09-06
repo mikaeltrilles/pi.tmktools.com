@@ -71,8 +71,9 @@ Pour toute modification demandée : **1) coder, 2) vérifier, 3) commit détaill
   actif (`run_background.sh` le refuse). Arrêt propre : `systemctl --user stop
   pi-calculate.service` (jusqu'à 40 min : le palier en cours se termine d'abord).
 - Un arrêt brutal ne perd que le palier en cours ; le checkpoint précédent reste valide.
-- Snapshots : `data/pi_N.txt` pour 10, 20, …, 900 000 puis un par million ; un
-  snapshot dont l'en-tête ne correspond pas au nom est supprimé au démarrage du serveur.
+- Snapshot : un seul fichier `data/pi_N.txt`, celui du dernier palier atteint (un
+  palier par million) ; les précédents sont supprimés automatiquement par le serveur.
+  Ne pas réintroduire de liste de paliers téléchargeables (décision du 2026-09-06).
 
 ## Serveur de production (o2switch, cPanel)
 

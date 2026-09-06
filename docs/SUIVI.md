@@ -25,6 +25,10 @@ de travail, la plus récente en haut. Le détail technique est dans `git log` et
 - **Cron keepalive installé sur le serveur** (toutes les 5 min) par Mika via un
   terminal externe ; crontab serveur complet (acme.sh, GeoIP, keepalive) vérifié.
 - **Instructions permanentes** : `CLAUDE.md` à la racine (commit `b912345`).
+- **Un seul snapshot téléchargeable** : le site ne conserve plus que le fichier du
+  dernier palier atteint (`data/pi_18000000.txt` aujourd'hui) ; les paliers
+  précédents sont supprimés automatiquement et le suivant remplacera l'actuel.
+  Carte « Dernier palier » dans l'interface, documentation et `CLAUDE.md` mis à jour.
 
 ### Vérifications
 
@@ -36,7 +40,7 @@ de travail, la plus récente en haut. Le détail technique est dans `git log` et
 
 | Élément | État |
 |---------|------|
-| Site https://pi.tmktools.com | En ligne, nouvelle interface, PWA |
+| Site https://pi.tmktools.com | En ligne, nouvelle interface, PWA, un seul snapshot (18 M) |
 | PM2 `pi-tmktools` (port 3001) | En ligne, surveillé par cron toutes les 5 min |
 | Calculateur `pi-calculate.service` | Actif depuis `pi.tmktools.com/calculator`, ≈ 18,53 M décimales |
 | Dépôt GitHub `mikaeltrilles/pi.tmktools.com` | À jour (`main`), arbre propre |

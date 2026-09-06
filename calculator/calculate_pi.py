@@ -75,7 +75,7 @@ LOCK_FILE = Path("pi_calculate.lock")
 HEARTBEAT_FILE = Path("calculator_heartbeat.json")
 
 # Sources de snapshots locales supplementaires : les snapshots pi_N.txt generes
-# par le site (pi.tmktools.com/data/) : un par million de decimales au-dela de 1M.
+# par le site (pi.tmktools.com/data/) : seul le dernier palier (par million) est conserve.
 ADDITIONAL_SNAPSHOT_DIRS = [SITE_DATA_DIR]
 AUTHOR = "PI RasberryPi4"
 ALGORITHM = "Chudnovsky (BigInt)"
