@@ -1,0 +1,23 @@
+{
+  "id": "/",
+  "name": "Pi — Décimales de π en temps réel",
+  "short_name": "Pi",
+  "description": "Décimales de π calculées en continu par l’algorithme de Chudnovsky, retranscrites en direct et téléchargeables par palier.",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0f14",
+  "theme_color": "#0b0f14",
+  "categories": ["education", "utilities"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "État du service", "short_name": "Statut", "url": "/api/health", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

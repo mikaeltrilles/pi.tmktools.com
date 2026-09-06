@@ -488,9 +488,66 @@
     }
   }
 
+  /* ── Installation de l'application (même logique que phi) ── */
+  function setupInstallButton(button, onInstalled) {
+    let deferred = null;
+    window.addEventListener('beforeinstallprompt', (event) => {
+      event.preventDefault();
+      deferred = event;
+      button.hidden = false;
+    });
+    button.addEventListener('click', async () => {
+      if (!deferred) return;
+      button.disabled = true;
+      await deferred.prompt();
+      const { outcome } = await deferred.userChoice;
+      deferred = null;
+      button.hidden = true;
+      button.disabled = false;
+      if (outcome === 'accepted') onInstalled();
+    });
+    window.addEventListener('appinstalled', () => {
+      button.hidden = true;
+      onInstalled();
+    });
+  }
+
+  /* ── Service worker : hors ligne + mise à jour proposée à l'utilisateur ── */
+  function setupServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
+    navigator.serviceWorker.register('/sw.js').then((reg) => {
+      const banner = $('updateBanner');
+      const proposeUpdate = (worker) => {
+        banner.hidden = false;
+        $('updateButton').addEventListener('click', () => worker.postMessage({ type: 'SKIP_WAITING' }), { once: true });
+        $('updateDismiss').addEventListener('click', () => { banner.hidden = true; }, { once: true });
+      };
+      if (reg.waiting && navigator.serviceWorker.controller) proposeUpdate(reg.waiting);
+      reg.addEventListener('updatefound', () => {
+        const worker = reg.installing;
+        if (!worker) return;
+        worker.addEventListener('statechange', () => {
+          if (worker.state !== 'installed') return;
+          if (navigator.serviceWorker.controller) proposeUpdate(worker);
+          else toast('Pi est disponible hors ligne.', 'info');
+        });
+      });
+    }).catch(() => {
+      // Un échec d'enregistrement n'empêche pas l'application de fonctionner
+    });
+  }
+
   /* ── Initialisation ── */
   function boot() {
     setupThemeToggle($('themeToggle'));
+    setupInstallButton($('installButton'), () => toast('Application installée.', 'ok'));
+    setupServiceWorker();
     $('btnReset').addEventListener('click', hardReset);
     $('btnShare').addEventListener('click', share);
     $('rankSearch').addEventListener('input', (e) => searchRank(e.target.value));

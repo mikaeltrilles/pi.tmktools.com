@@ -19,14 +19,24 @@
   <meta property="og:title" content="Pi — Les décimales de π en temps réel">
   <meta property="og:description" content="Des millions de décimales exactes de π, calculées en continu par l’algorithme de Chudnovsky et retranscrites en direct.">
   <meta property="og:url" content="https://pi.tmktools.com/">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:image" content="https://pi.tmktools.com/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Le symbole π cyan et les premières décimales de pi">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://pi.tmktools.com/og-image.png">
   <meta name="twitter:title" content="Pi — Les décimales de π en temps réel">
   <meta name="twitter:description" content="Des millions de décimales exactes de π, calculées en continu et retranscrites en direct.">
 
   <!-- Icônes -->
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <meta name="application-name" content="Pi">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Pi">
+  <meta name="application-name" content="Pi">
 
   <!-- Polices auto-hébergées -->
   <link rel="preload" href="/fonts/jetbrains-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -99,6 +109,9 @@
           <span class="dot"></span><span id="calcStatusText">Calcul : —</span>
         </a>
         <span class="badge" id="statusBadge" role="status"><span class="dot"></span><span id="statusText">Hors ligne</span></span>
+        <button id="installButton" type="button" class="btn btn-ghost" hidden>
+          <span aria-hidden="true">⤓</span> Installer l’application
+        </button>
         <button id="themeToggle" type="button" class="theme-toggle" aria-label="Changer de thème">
           <span class="theme-icon theme-icon-sun" aria-hidden="true">☀</span>
           <span class="theme-icon theme-icon-moon" aria-hidden="true">☾</span>
@@ -275,6 +288,15 @@
     <span class="last-digit-label">Dernière décimale</span>
     <span id="lastDigitValue" class="last-digit-value">–</span>
     <span id="lastDigitRank" class="last-digit-rank">Rang #–</span>
+  </div>
+
+  <!-- Bandeau de mise à jour de l'application -->
+  <div id="updateBanner" class="update-banner" role="dialog" aria-labelledby="updateTitle" hidden>
+    <span id="updateTitle">Une nouvelle version de Pi est disponible.</span>
+    <div class="update-actions">
+      <button id="updateButton" type="button" class="btn btn-primary btn-sm">Mettre à jour</button>
+      <button id="updateDismiss" type="button" class="btn btn-ghost btn-sm">Plus tard</button>
+    </div>
   </div>
 
   <script src="/app.js" defer></script>

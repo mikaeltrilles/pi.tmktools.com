@@ -26,6 +26,9 @@ pi.tmktools.com/
 │   ├── app.js                → Logique du frontend (SSE, compteur, grille, recherches, snapshots)
 │   ├── theme-init.js         → Thème clair/sombre appliqué avant le premier rendu (clé « pi-theme »)
 │   ├── fonts/                → Space Grotesk et JetBrains Mono auto-hébergées
+│   ├── manifest.webmanifest  → Manifeste PWA (installation de l'application)
+│   ├── sw.js                 → Service worker : coquille hors ligne, mises à jour proposées
+│   ├── icons/ · og-image.png → Icônes PWA et image Open Graph (générées par scripts/generate-icons.mjs)
 │   └── favicon.svg
 ├── data/                     → (non versionné) données servies par le site
 │   ├── pi_complet.txt        → copie déployée / uploadée du fichier π
@@ -146,6 +149,12 @@ Stack : Node.js 18+ · Express 4 · Vanilla JS · Server-Sent Events.
 ### Design partagé avec phi.tmktools.com
 
 L'interface reprend à l'identique le système de design de [phi.tmktools.com](https://phi.tmktools.com) (calculateur du nombre d'or) pour que les deux sites soient homogènes : mêmes jetons (fonds `#0b0f14` / `#f6f4ee`, bordures, rayons, ombres), mêmes polices auto-hébergées (Space Grotesk, JetBrains Mono), mêmes composants (en-tête avec marque, hero avec symbole et formule, cartes, boutons, badges, bascule de thème, toasts, grille pédagogique, pied de page croisé). Seul l'accent diffère : **cyan pour π**, doré pour φ. Le thème suit la préférence système par défaut et le choix manuel est mémorisé dans `localStorage` (`pi-theme`). Aucune ressource externe n'est chargée (polices et styles servis par le site).
+
+### Application installable (PWA)
+
+Comme φ, le site est une **Progressive Web App** : un bouton « Installer l'application » apparaît dans l'en-tête dès que le navigateur le propose (Chrome, Edge, Android), et l'application s'ouvre ensuite en fenêtre autonome avec l'icône π. Le service worker (`public/sw.js`) met en cache la coquille (pages, styles, script, polices, icônes) pour un chargement instantané et un affichage hors ligne ; le contenu vivant (flux SSE, API, fichiers π) passe **toujours** par le réseau. Quand une nouvelle version est déployée, un bandeau « Mettre à jour » est proposé au visiteur, qui choisit quand recharger.
+
+Pour regénérer les icônes et l'image Open Graph après une modification du glyphe : `npm run icons` (dépendance de développement `sharp`).
 
 ### Routes API
 
