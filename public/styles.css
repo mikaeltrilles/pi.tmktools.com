@@ -315,6 +315,11 @@ a.badge:hover {
   user-select: none;
 }
 
+.hero-text {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .hero-title {
   font-size: clamp(1.25rem, 3vw, 1.7rem);
   margin-bottom: 0.5rem;
@@ -329,6 +334,7 @@ a.badge:hover {
 .formula {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.6rem;
   font-family: var(--font-mono);
   font-size: 1.1rem;
@@ -337,14 +343,20 @@ a.badge:hover {
   background: var(--bg-panel);
   border: 1px solid var(--border-subtle);
   max-width: 100%;
-  overflow-x: auto;
+  box-sizing: border-box;
 }
 
 .formula-body {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
-  white-space: nowrap;
+  justify-content: center;
+  gap: 0.35rem 0.5rem;
+}
+
+.formula sup {
+  font-size: 0.7em;
+  line-height: 0;
 }
 
 .frac {
@@ -358,10 +370,12 @@ a.badge:hover {
 .frac .num {
   border-bottom: 1.5px solid currentColor;
   padding: 0 0.3rem 0.1rem;
+  white-space: nowrap;
 }
 
 .frac .den {
   padding-top: 0.1rem;
+  white-space: nowrap;
 }
 
 @media (max-width: 560px) {
@@ -369,6 +383,22 @@ a.badge:hover {
     grid-template-columns: 1fr;
     text-align: center;
     justify-items: center;
+  }
+
+  .hero-text {
+    width: 100%;
+  }
+
+  .hero-lead {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* La formule se réduit et se replie pour tenir dans la largeur du téléphone */
+  .formula {
+    width: 100%;
+    font-size: clamp(0.62rem, 2.75vw, 0.95rem);
+    padding: 0.55rem 0.5rem;
   }
 }
 

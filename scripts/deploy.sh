@@ -43,6 +43,15 @@ if ! ssh -o BatchMode=yes -o ConnectTimeout=10 "$REMOTE" "echo OK" >/dev/null 2>
 fi
 echo "✅ Connexion SSH OK"
 
+# ── Version du service worker ────────────────────
+# Le service worker précache la coquille du site : sa constante VERSION doit
+# changer dès qu'un fichier de public/ change, sinon les visiteurs gardent
+# l'ancienne version en cache. On la dérive du contenu (hors sw.js lui-même) :
+# identique tant que rien ne change, nouvelle dès qu'un fichier est modifié.
+SW_HASH=$(find public -type f ! -name sw.js -print0 | sort -z | xargs -0 cat | md5sum | cut -c1-10)
+sed -i "s/^const VERSION = '.*';/const VERSION = 'pi-$SW_HASH';/" public/sw.js
+echo "🧩 Service worker : VERSION = pi-$SW_HASH"
+
 # ── Commit & push local ──────────────────────────
 echo "📤 Git commit & push SSH..."
 git add -A
