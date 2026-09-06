@@ -53,7 +53,7 @@ pi.tmktools.com/
 │   ├── install-remote-keepalive.sh  → Installe le cron ci-dessus sur le serveur
 │   ├── remote-status.sh             → État PM2 / port / décimales publiées
 │   └── legacy/                      → anciens scripts Raspberry Pi (conservés pour mémoire)
-└── docs/commandes-utiles.txt
+└── docs/                       → commandes-utiles.txt, crontab-serveur.txt, SUIVI.md (journal des interventions)
 ```
 
 ## 🔗 Flux de données
