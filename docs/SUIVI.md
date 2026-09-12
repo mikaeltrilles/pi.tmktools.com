@@ -136,6 +136,44 @@ Piste restante : `add_terms` est désormais le goulot (309 s sur ~392). Le binar
 splitting, algorithme habituel pour Chudnovsky, le ramènerait en O(M(n) log n),
 mais c'est une réécriture du moteur.
 
+### Plafonds mémoire posés sur les trois calculateurs
+
+Suite donnée au constat ci-dessous. Relevé systemd sur sept jours, qui confirme
+l'analyse et désigne le coupable :
+
+| service | actuel | pic 7 jours | arrêts par OOM |
+|---|---|---|---|
+| `pi-calculate` | 0,80 Go | **11,8 Go** | **6** |
+| `phi-calculate` | 0,59 Go | 3,9 Go | 0 |
+| `fibo-calculate` | 1,24 Go | 2,5 Go | 1 |
+
+π était bien le principal fautif, et son pic est tombé à **1,00 Go** depuis le
+passage à GMP : la cause immédiate a donc déjà disparu. Restait le défaut de
+fond — aucun arbitrage entre les trois — qui faisait que le noyau tuait un
+service au hasard plutôt que celui qui dérapait.
+
+Chaque calculateur a reçu `MemoryHigh` (freinage : le noyau récupère la mémoire
+de ce service, qui ralentit sans mourir) et `MemoryMax` (garde-fou : ce
+service-là est arrêté, lui seul, puis relancé depuis son checkpoint) :
+
+    pi-calculate     MemoryHigh=3G      MemoryMax=4500M
+    phi-calculate    MemoryHigh=3500M   MemoryMax=5G
+    fibo-calculate   MemoryHigh=2G      MemoryMax=3G
+
+Valeurs calées sur les pics mesurés, avec une marge, et non au jugé. Total des
+seuils de freinage : 8,5 Go, ce qui laisse ~5 Go au système et aux sessions.
+
+Posés en fichiers *drop-in* (`~/.config/systemd/user/<service>.service.d/50-memoire.conf`)
+plutôt qu'en modifiant les unités : réversible, et les unités de φ et Fibonacci
+restent intactes. Appliqués à chaud par `daemon-reload`, sans interrompre aucun
+calcul.
+
+Vérification faite au niveau du noyau et pas seulement de l'unité — `memory.high`
+et `memory.max` lus dans les cgroups — car sans délégation du contrôleur
+`memory`, systemd ignore ces directives en silence. Ici : cgroup v2, contrôleurs
+`cpu memory pids` délégués. Le drop-in de π est versionné, le README documente
+l'installation et le contrôle. Commit `1a0a48b`.
+
 ### Les arrêts mémoire ne venaient pas de π seul
 
 En surveillant la bascule, deux tâches de fond ont été tuées faute de mémoire.

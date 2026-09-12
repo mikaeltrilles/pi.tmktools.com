@@ -210,6 +210,49 @@ Version **incrémentale** de la formule de Chudnovsky :
 
 La somme partielle est maintenue sous la forme `S_n = P_n / (-640320³)^n`, ce qui permet d'ajouter des termes par blocs sans recalculer la série (≈ 14,18 décimales par terme). Tests : `python3 calculator/tests/test_chud_incremental.py`.
 
+### Plafonds mémoire
+
+Trois calculateurs tournent en permanence sur ce poste — π, φ et Fibonacci — et
+se partageaient 14 Go sans arbitrage. Quand la mémoire manquait, le noyau
+choisissait sa victime selon son propre score, pas forcément le service qui
+dérapait : sur les sept jours précédant le 12 septembre 2026, π a été arrêté six
+fois de cette manière.
+
+Chaque calculateur a donc reçu un plafond, via un fichier *drop-in* plutôt qu'une
+modification de son unité (réversible : il suffit de supprimer le fichier) :
+
+| service | `MemoryHigh` | `MemoryMax` | pic mesuré |
+|---|---|---|---|
+| `pi-calculate` | 3 Go | 4,5 Go | 1,0 Go (11,8 Go avant GMP) |
+| `phi-calculate` | 3,5 Go | 5 Go | 3,9 Go |
+| `fibo-calculate` | 2 Go | 3 Go | 2,5 Go |
+
+`MemoryHigh` est le mécanisme utile : au-delà, le noyau récupère agressivement la
+mémoire de ce service, qui ralentit mais continue de tourner. `MemoryMax` est le
+garde-fou : au-delà, c'est ce service-là qui est arrêté — et lui seul — puis
+relancé par systemd depuis son dernier checkpoint.
+
+Le drop-in de π est versionné (`calculator/pi-calculate.service.d/50-memoire.conf`) ;
+ceux de φ et Fibonacci vivent dans leurs dépôts respectifs.
+
+```bash
+# Installation ou remise en place
+mkdir -p ~/.config/systemd/user/pi-calculate.service.d
+cp calculator/pi-calculate.service.d/50-memoire.conf ~/.config/systemd/user/pi-calculate.service.d/
+systemctl --user daemon-reload     # s'applique à chaud, sans redémarrer le calcul
+
+# Contrôle : les valeurs doivent apparaître dans le cgroup, pas seulement dans l'unité
+systemctl --user show pi-calculate.service -p MemoryHigh -p MemoryMax -p MemoryCurrent -p MemoryPeak
+```
+
+Ces directives supposent cgroup v2 avec le contrôleur `memory` délégué aux
+services utilisateur. À vérifier en cas de doute, sinon elles sont ignorées
+silencieusement :
+
+```bash
+cat /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/cgroup.controllers
+```
+
 ## ⚙️ Moteur arithmétique (GMP)
 
 Le calculateur utilise **GMP** (via `gmpy2`) quand il est disponible, et retombe
