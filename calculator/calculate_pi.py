@@ -31,6 +31,36 @@ import sys
 if hasattr(sys, "set_int_max_str_digits"):
     sys.set_int_max_str_digits(0)
 
+# ── Moteur arithmetique ──────────────────────────────────────────────────────
+# Les entiers natifs de Python multiplient en Karatsuba (temps en n^1.58) ;
+# GMP passe en FFT (n^1.16). A 18,7 millions de decimales, l'ecart mesure est
+# d'un facteur 100 a 200 sur les multiplications, divisions et racines carrees.
+# GMP reste FACULTATIF : sans lui, tout fonctionne a l'identique avec les
+# entiers natifs, simplement plus lentement.
+#
+# Les dependances sont cherchees dans calculator/vendor/ pour que le calculateur
+# les trouve quel que soit le mode de lancement (systemd, run_background.sh,
+# appel direct), sans dependre d'un environnement virtuel active.
+import os as _os
+_VENDOR = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "vendor")
+if _os.path.isdir(_VENDOR) and _VENDOR not in sys.path:
+    sys.path.insert(0, _VENDOR)
+
+import math as _math
+
+try:
+    from gmpy2 import mpz as _mpz, isqrt as _isqrt, version as _gmpy2_version, mp_version as _gmp_version
+    GMP_DISPONIBLE = True
+    MOTEUR_ARITHMETIQUE = f"{_gmp_version()} via gmpy2 {_gmpy2_version()}"
+except ImportError:
+    # Repli sur les entiers natifs. math.isqrt est ecrit en C : il reste bien
+    # plus rapide, et bien plus sobre en memoire, qu'une boucle de Newton ecrite
+    # en Python (facteur 21 en temps et 7 en memoire, mesures du 12/09/2026).
+    _mpz = int
+    _isqrt = _math.isqrt
+    GMP_DISPONIBLE = False
+    MOTEUR_ARITHMETIQUE = f"entiers natifs Python {sys.version_info.major}.{sys.version_info.minor}"
+
 # Fuseau horaire Europe/Paris pour les logs et l'en-tete du fichier π
 import os
 import shutil
@@ -104,7 +134,9 @@ C = 426880
 K1 = 545140134
 K2 = 13591409
 K3 = 640320
-K3_CUBE = K3 ** 3
+# K3_CUBE sert de base aux puissances geantes ((-K3_CUBE) ** n depasse 22 millions
+# de chiffres) : on le confie au moteur arithmetique des le depart.
+K3_CUBE = _mpz(K3 ** 3)
 DIGITS_PER_TERM = 14.1816474627
 SAFETY_MARGIN = 5
 EXTRA = 10
@@ -166,17 +198,19 @@ def heartbeat_loop():
         upload_heartbeat()
 
 
-def isqrt(n: int) -> int:
+def isqrt(n):
+    """
+    Racine carree entiere.
+
+    Anciennement une boucle de Newton ecrite en Python : a la taille reelle
+    (37 millions de chiffres pour l'appel de evaluate_pi), elle representait
+    l'essentiel des ~50 minutes d'un palier. Elle est remplacee par
+    l'implementation du moteur arithmetique — GMP quand il est la, sinon
+    math.isqrt, ecrit en C.
+    """
     if n < 0:
         raise ValueError("isqrt() argument must be non-negative")
-    if n == 0:
-        return 0
-    x = 1 << ((n.bit_length() + 1) // 2)
-    while True:
-        y = (x + n // x) // 2
-        if y >= x:
-            return x
-        x = y
+    return _isqrt(n)
 
 
 class ChudnovskyEngine:
@@ -195,11 +229,13 @@ class ChudnovskyEngine:
     """
 
     def __init__(self, n: int = 0, P: int = 0, M: int = 1, L: int = K2, digits_done: int = 0):
-        self.n = n
-        self.P = P
-        self.M = M
-        self.L = L
-        self.digits_done = digits_done
+        # n et digits_done restent de petits entiers natifs (indices, affichage) ;
+        # P, M et L sont les grands entiers confies au moteur arithmetique.
+        self.n = int(n)
+        self.P = _mpz(P)
+        self.M = _mpz(M)
+        self.L = _mpz(L)
+        self.digits_done = int(digits_done)
 
     @classmethod
     def initial(cls):
@@ -212,23 +248,32 @@ class ChudnovskyEngine:
             content = f.read().strip()
         if not content:
             raise ValueError(f"Checkpoint vide : {path}")
-        data = json.loads(content)
+        # parse_int confie la conversion des entiers au moteur arithmetique.
+        # C'est decisif ici : le checkpoint contient des nombres de 22 millions de
+        # chiffres, et la conversion texte -> entier natif de Python est
+        # quadratique (192 s extrapolees, contre 1 s avec GMP).
+        data = json.loads(content, parse_int=_mpz)
         return cls(
-            n=data["n"],
+            n=int(data["n"]),
             P=data["P"],
             M=data["M"],
             L=data["L"],
-            digits_done=data["digits_done"],
+            digits_done=int(data["digits_done"]),
         )
 
     def to_dict(self):
+        # json ne sait pas serialiser un entier GMP : on repasse en entier natif.
+        # La conversion elle-meme est immediate (meme representation binaire) ;
+        # c'est l'ecriture decimale faite ensuite par json qui coute, comme avant.
+        # Le format du fichier est inchange : les checkpoints restent lisibles
+        # par l'ancienne version du calculateur.
         return {
             "version": 2,
-            "n": self.n,
-            "P": self.P,
-            "M": self.M,
-            "L": self.L,
-            "digits_done": self.digits_done,
+            "n": int(self.n),
+            "P": int(self.P),
+            "M": int(self.M),
+            "L": int(self.L),
+            "digits_done": int(self.digits_done),
             "algorithm": ALGORITHM,
             "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
@@ -267,7 +312,7 @@ class ChudnovskyEngine:
         sign = 1
 
         # D_current = K3_CUBE^{m-j} au fil des iterations
-        D_current = K3_CUBE ** m
+        D_current = K3_CUBE ** m   # entier du moteur : K3_CUBE l'est deja
 
         S_part = 0
         M = self.M
@@ -276,7 +321,7 @@ class ChudnovskyEngine:
         for j in range(m):
             if j > 0:
                 k = self.n + j
-                M = M * 24 * (6 * k - 5) * (2 * k - 1) * (6 * k - 1) // (k ** 3)
+                M = M * 24 * (6 * k - 5) * (2 * k - 1) * (6 * k - 1) // _mpz(k ** 3)
                 L += K1
                 D_current //= K3_CUBE
 
@@ -297,8 +342,8 @@ def evaluate_pi(engine: ChudnovskyEngine, digits: int) -> str:
     """
     Evalue π a `digits` decimales a partir de l'etat du moteur.
     """
-    scale = 10 ** (digits + EXTRA)
-    sqrt_10005 = isqrt(10005 * scale * scale)
+    scale = _mpz(10) ** (digits + EXTRA)
+    sqrt_10005 = isqrt(_mpz(10005) * scale * scale)
     numerator = C * sqrt_10005
 
     # pi = C * sqrt(10005) / S_n
@@ -1216,6 +1261,9 @@ def main():
 
         log_message("=" * 60)
         log_message("🥧 Calcul de π — Algorithme de Chudnovsky (BigInt)")
+        log_message(f"⚙️  Moteur arithmetique : {MOTEUR_ARITHMETIQUE}")
+        if not GMP_DISPONIBLE:
+            log_message("   (GMP absent : calcul environ 100 fois plus lent — voir README)")
         if args.digits:
             log_message(f"📏 Mode FINI : {args.digits:,} decimales")
         else:

@@ -210,6 +210,52 @@ Version **incrémentale** de la formule de Chudnovsky :
 
 La somme partielle est maintenue sous la forme `S_n = P_n / (-640320³)^n`, ce qui permet d'ajouter des termes par blocs sans recalculer la série (≈ 14,18 décimales par terme). Tests : `python3 calculator/tests/test_chud_incremental.py`.
 
+## ⚙️ Moteur arithmétique (GMP)
+
+Le calculateur utilise **GMP** (via `gmpy2`) quand il est disponible, et retombe
+sinon sur les entiers natifs de Python. Le résultat est rigoureusement identique
+dans les deux cas ; seule la vitesse change.
+
+L'écart vient de l'algorithme de multiplication : Python plafonne à Karatsuba
+(temps en n^1,58), GMP passe en FFT (n^1,16). Mesures du 12 septembre 2026, sur
+l'état réel à 18,7 M de décimales :
+
+| | entiers natifs | GMP | gain |
+|---|---|---|---|
+| lecture du checkpoint (27 Mo) | 51,2 s | 1,5 s | **34×** |
+| `isqrt` (37 M de chiffres, extrapolé) | 39,5 min | 2,4 s | **~1000×** |
+| multiplication (extrapolée) | 55,8 s | 0,3 s | 164× |
+| division (extrapolée) | 84,9 s | 0,8 s | 105× |
+
+Le moteur retenu est écrit dans le journal à chaque démarrage :
+
+```
+⚙️  Moteur arithmetique : GMP 6.3.0 via gmpy2 2.3.1
+```
+
+### Installation
+
+Les dépendances vivent dans `calculator/vendor/` (hors dépôt), que le calculateur
+ajoute lui-même à `sys.path` : elles sont donc trouvées quel que soit le mode de
+lancement — systemd, `run_background.sh` ou appel direct — sans environnement
+virtuel à activer.
+
+```bash
+pip install --target calculator/vendor gmpy2
+```
+
+Sur cette machine, `/usr/bin/python3` n'a ni `pip` ni `ensurepip` ; le paquet a
+été installé depuis un environnement virtuel temporaire avec `--target`. La
+bibliothèque système `libgmp` était déjà présente.
+
+### Sans GMP
+
+Tout continue de fonctionner : `math.isqrt` (écrit en C) remplace alors la boucle
+de Newton qui était auparavant écrite en Python — à elle seule, elle représentait
+l'essentiel des ~50 minutes d'un palier. Le journal signale l'absence de GMP au
+démarrage. Le format des checkpoints est inchangé et reste lisible dans les deux
+sens, ce qui permet de revenir en arrière à tout moment.
+
 ## 📝 Licence
 
 Projet personnel — fait avec ♥.

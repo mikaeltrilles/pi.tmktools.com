@@ -46,3 +46,7 @@ venv/
 *.swp
 *~
 .DS_Store
+
+# Dependances Python du calculateur installees localement (gmpy2 + GMP).
+# Recreees par : pip install --target calculator/vendor gmpy2
+calculator/vendor/
