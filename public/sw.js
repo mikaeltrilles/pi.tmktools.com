@@ -3,7 +3,7 @@
    de la coquille, mises à jour proposées à l'utilisateur comme sur phi).
    Le contenu vivant (flux SSE, API, fichiers π) n'est jamais mis en cache.
    ════════════════════════════════════════════════════════════════════════════ */
-const VERSION = 'pi-7f8d6388ca';
+const VERSION = 'pi-f6e796ab11';
 const SHELL_CACHE = `${VERSION}-shell`;
 const ASSET_CACHE = `${VERSION}-assets`;
 
