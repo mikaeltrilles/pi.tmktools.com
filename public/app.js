@@ -265,8 +265,30 @@
     }
   }
 
+  // Marge sous laquelle on considère que le lecteur suit le direct : au-delà,
+  // c'est qu'il a remonté volontairement dans les décimales déjà tombées, et on
+  // ne lui reprend pas la main.
+  const SEUIL_SUIVI_DIRECT = 120;
+
   function scrollToLatest() {
-    if (latestDigitEl) latestDigitEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    if (!latestDigitEl) return;
+    const stage = $('piStage');
+    if (!stage || !stage.contains(latestDigitEl)) return;
+
+    // On ne fait défiler QUE le conteneur des décimales. scrollIntoView() faisait
+    // défiler tous ses ancêtres, la fenêtre comprise : à chaque décimale rendue,
+    // la page sautait vers la zone π, arrachant le lecteur à la section qu'il
+    // était en train de lire (jusqu'à 694 px de remontée mesurés au chargement).
+    const suitLeDirect =
+      stage.scrollHeight - stage.scrollTop - stage.clientHeight <= SEUIL_SUIVI_DIRECT;
+    if (!suitLeDirect) return;
+
+    const zone = stage.getBoundingClientRect();
+    const cellule = latestDigitEl.getBoundingClientRect();
+    const debordeEnBas = cellule.bottom - zone.bottom;
+    const debordeEnHaut = zone.top - cellule.top;
+    if (debordeEnBas > 0) stage.scrollTop += debordeEnBas + 8;
+    else if (debordeEnHaut > 0) stage.scrollTop -= debordeEnHaut + 8;
   }
 
   async function scrollToRank(rank) {
