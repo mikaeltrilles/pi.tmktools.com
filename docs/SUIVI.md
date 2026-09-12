@@ -82,6 +82,76 @@ optimisation à décider, pas un correctif d'incident.
   console, aucun débordement horizontal.
 - Calculateur local : `pi-calculate.service` actif, publication en production à jour.
 
+### Le calculateur passe à GMP : environ 690 fois plus rapide
+
+Le calcul passait l'essentiel de son temps dans une racine carrée entière
+réimplémentée en boucle de Newton, en Python pur. À la taille réelle de l'appel
+dans `evaluate_pi` (37 millions de chiffres), cette seule boucle représentait
+~39,5 des ~50 minutes que durait un palier — estimation recoupée par les paliers
+observés en production (15:29:16 → 16:19:55, soit 50 min 39 s).
+
+Deux changements, le second facultatif : `isqrt` délègue au moteur arithmétique,
+et GMP (via `gmpy2`) est utilisé s'il est présent, avec repli automatique sur les
+entiers natifs. Python plafonne à Karatsuba (n^1,58), GMP passe en FFT (n^1,16).
+
+Mesures sur l'état réel à 18,7 M de décimales :
+
+| | entiers natifs | GMP | gain |
+|---|---|---|---|
+| évaluation d'un palier | 50 min 39 s | 7 s | **434×** |
+| lecture du checkpoint (27 Mo) | 51,2 s | 1,5 s | 34× |
+| `isqrt` sur 2 M de chiffres | 31,93 s / 40,6 Mo | 0,07 s / 9,1 Mo | 456× |
+
+Correction vérifiée avant bascule : π identique au chiffre près entre les deux
+moteurs à 1 000, 10 000, 50 000 et 200 000 décimales, et checkpoints
+interchangeables dans les deux sens — un retour en arrière reste possible.
+Commit `cf8a89b`.
+
+### Le goulot se déplace : taille de palier portée à 100 000
+
+Une fois le calcul à 7 secondes, un cycle de 82 s se décomposait ainsi : 7 s de
+calcul, 70 s pour sauvegarder et envoyer le checkpoint de 27 Mo, 5 s pour le
+backup local et `pi_complet.txt`. Le calcul ne pesait plus que 8,5 %.
+
+`evaluate_pi` réévaluant π en entier à chaque palier, son coût ne dépend pas de
+la taille de celui-ci : l'agrandir amortit évaluation et E/S. En sens inverse,
+`add_terms` est une boucle Python dont le coût croît plus vite que linéairement.
+D'où un optimum mesuré :
+
+| palier | `add_terms` | `evaluate` | débit |
+|---|---|---|---|
+| 1 000 | 0,5 s | 6,9 s | 43 711 /h |
+| 10 000 | 14,8 s | 7,0 s | 371 770 /h |
+| 50 000 | 102,6 s | 7,9 s | 969 929 /h |
+| **100 000** | 238,3 s | 6,9 s | **1 124 158 /h** |
+| 250 000 | 1 011,1 s | 9,2 s | 821 678 /h |
+
+Premier palier réel après bascule : `add_terms` 309 s, évaluation 8 s, soit
+~919 000 décimales/heure une fois les E/S comptées — un peu sous la mesure de
+laboratoire, le processeur étant partagé avec les autres calculateurs de la
+machine. À comparer aux ~1 335 décimales/heure d'avant : **facteur ~690**.
+Commit `ff0e860`.
+
+Piste restante : `add_terms` est désormais le goulot (309 s sur ~392). Le binary
+splitting, algorithme habituel pour Chudnovsky, le ramènerait en O(M(n) log n),
+mais c'est une réécriture du moteur.
+
+### Les arrêts mémoire ne venaient pas de π seul
+
+En surveillant la bascule, deux tâches de fond ont été tuées faute de mémoire.
+Le relevé des processus a montré que le calculateur π n'occupait alors que
+128 Mo : la mémoire était prise par les autres projets de la machine —
+`fibo.tmktools.com` (1,32 Go), le calculateur de `phi.tmktools.com` (1,16 Go) et
+cinq sessions Claude (~1,75 Go cumulés). Trois calculateurs et plusieurs sessions
+se partagent 14 Go sans arbitrage.
+
+Le passage à GMP a fait tomber le pic de π de 9,5 Go à 1 ou 2 Go, ce qui éloigne
+nettement le risque. Mais la cause de fond demeure : si les autres projets
+grossissent, les arrêts reviendront et frapperont l'un des trois, pas
+nécessairement celui qui dérape. Piste proposée, non appliquée : donner à chaque
+calculateur un plafond `MemoryMax` / `MemoryHigh` dans son unité systemd, pour
+que le noyau freine le service fautif au lieu d'en tuer un au hasard.
+
 ### Le filet a été éprouvé pour de vrai
 
 Le contrôle de disponibilité n'avait jamais été mis à l'épreuve — c'est
