@@ -82,6 +82,41 @@ optimisation à décider, pas un correctif d'incident.
   console, aucun débordement horizontal.
 - Calculateur local : `pi-calculate.service` actif, publication en production à jour.
 
+### Le filet a été éprouvé pour de vrai
+
+Le contrôle de disponibilité n'avait jamais été mis à l'épreuve — c'est
+exactement ce qui a manqué ce matin. Test mené après son installation, en
+reproduisant l'incident constaté (application absente de PM2, et non simple
+processus tué, que PM2 aurait relancé lui-même) :
+
+    16 h 45 51  npx pm2 delete pi-tmktools  → port 3001 muet, site en 503
+    16 h 50 02  le cron détecte le port muet
+    16 h 50 12  relance effectuée, HTTP 200
+
+251 secondes au total, dans la fenêtre annoncée de cinq minutes. `linkfree`, qui
+partage le même démon PM2, n'a pas été touché. Le journal `logs/keepalive.log`
+porte enfin sa première écriture, ce qui lève l'ambiguïté qui a causé la panne.
+
+### Purge des checkpoints historisés
+
+Les copies historisées du checkpoint s'accumulaient : neuf fichiers de 27 Mo, soit
+246 Mo des 323 Mo de `data/`, pour un contenu presque identique (les termes de la
+série, qui ne varient que de mille décimales d'un fichier au suivant).
+
+`REMOTE_CHECKPOINT_HISTORY` passe de 10 à 1. Le motif de rotation est aussi
+restreint à `pi_checkpoint_[0-9]*.json` : `pi_checkpoint_*.json` englobait
+`pi_checkpoint_restore.json`, si bien qu'avec un historique de 1 le point de
+reprise protégé aurait été supprimé à chaque rotation et seulement recréé en cas
+de progression — donc perdu lors d'une régression, le seul cas où il sert. Le
+défaut préexistait, mais ne se déclenchait qu'au-delà de dix copies.
+
+Purge de l'existant faite avec la commande exacte du nouveau code, ce qui la
+valide : `data/` ramené de 323 Mo à 114 Mo, les trois points de reprise intacts
+(principal, protégé, dernier historisé). Commit `c0df2c3`.
+
+**Le calculateur en cours a l'ancien code en mémoire** : le réglage ne prendra
+effet qu'à son prochain redémarrage. D'ici là, les historiques remonteront à dix.
+
 ### Point de vigilance : le calculateur local est tué par manque de mémoire
 
 Constaté en auditant le service : `pi-calculate.service` a été tué deux fois le
