@@ -82,6 +82,23 @@ optimisation à décider, pas un correctif d'incident.
   console, aucun débordement horizontal.
 - Calculateur local : `pi-calculate.service` actif, publication en production à jour.
 
+### Point de vigilance : le calculateur local est tué par manque de mémoire
+
+Constaté en auditant le service : `pi-calculate.service` a été tué deux fois le
+12 septembre (00 h 24 et 14 h 41) par le **OOM killer** du noyau, avec des pics de
+**9,5 Go puis 6,4 Go**. La machine a 14 Go de mémoire, dont 12 déjà utilisés, et
+ses 4 Go de swap sont saturés. L'évaluation d'un palier à 18,7 M décimales demande
+donc plus que ce qui reste disponible.
+
+Conséquence immédiate limitée : le service redémarre seul au bout d'une minute et
+repart du dernier checkpoint. Chaque incident coûte le palier en cours et environ
+une minute de rechargement, rien de plus.
+
+Mais le besoin croît avec le nombre de décimales : ces arrêts vont se rapprocher.
+Pistes, à arbitrer : agrandir le swap, libérer de la mémoire sur le poste, ou
+plafonner la précision par lancement. À décider avant que la progression ne
+s'arrête d'elle-même.
+
 ### Leçon
 
 Un contrôle silencieux doit **annoncer son silence** là où on risque de le juger :
