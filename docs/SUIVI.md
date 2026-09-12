@@ -163,8 +163,17 @@ d'affilée — c'est dans ce scénario qu'il a été reproduit puis corrigé.
 Vérifié en local (port 3199) puis en production, sur cinq points : les décimales
 continuent d'arriver, la zone π suit toujours le direct, la dernière décimale y
 reste visible, la page ne bouge plus d'un pixel, et le lecteur garde la main
-quand il remonte dans le flux. φ et Fibonacci n'utilisent pas `scrollIntoView` :
-ils ne sont pas concernés. Commit `f7c6c18`, déployé le 12 septembre à 22 h 35.
+quand il remonte dans le flux. Commit `f7c6c18`, déployé le 12 septembre à 22 h 35.
+
+φ et Fibonacci ont été vérifiés à part, et ne sont pas concernés. Leur affichage
+repose sur un rafraîchissement périodique par remplacement (30 s et 60 s), et non
+sur un rendu incrémental élément par élément : le mécanisme en cause chez π
+n'existe pas chez eux. Ils n'appellent ni `scrollIntoView`, ni `window.scroll`,
+ni d'affectation de `scrollTop` ; leur unique `focus()` est déclenché par un clic
+du lecteur dans l'explorateur, ce qui est le comportement attendu. Observation de
+95 secondes sur chacun, couvrant les deux cycles de rafraîchissement, le lecteur
+placé à 70 % de la page : aucun déplacement (écart maximal 0 px) et hauteur de
+page constante.
 
 ### Plafonds mémoire posés sur les trois calculateurs
 
