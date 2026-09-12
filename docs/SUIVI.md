@@ -172,7 +172,7 @@ Vérification faite au niveau du noyau et pas seulement de l'unité — `memory.
 et `memory.max` lus dans les cgroups — car sans délégation du contrôleur
 `memory`, systemd ignore ces directives en silence. Ici : cgroup v2, contrôleurs
 `cpu memory pids` délégués. Le drop-in de π est versionné, le README documente
-l'installation et le contrôle. Commit `1a0a48b`.
+l'installation et le contrôle. Commit `ad01bb6`.
 
 ### Les arrêts mémoire ne venaient pas de π seul
 
