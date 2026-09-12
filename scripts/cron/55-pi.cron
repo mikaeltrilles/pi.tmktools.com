@@ -1,0 +1,14 @@
+# Fragment cron pi.tmktools.com — à copier dans ~/cron/cron.d/ sur le serveur,
+# puis appliquer avec ~/cron/apply-crontab.sh (voir docs/crontab-serveur.txt).
+#
+# ATTENTION — ne pas désactiver cette tâche au motif que son journal est vide :
+# remote-keepalive.sh est SILENCIEUX tant que le site répond (c'est voulu).
+# Un journal logs/keepalive.log vide signifie « aucune panne depuis l'installation »,
+# et non « tâche inactive ». La seule preuve d'inactivité serait l'absence de la
+# tâche dans `crontab -l`.
+#
+# Rôle : sur cet hébergement mutualisé, le processus Node peut être tué
+# (nettoyage de processus, limites LVE). Plus rien n'écoute alors sur le port 3001
+# et Apache renvoie « 503 Service Unavailable ». Ce contrôle relance PM2 dans les
+# 5 minutes. Sans lui, le site reste hors ligne jusqu'à une intervention manuelle.
+*/5 * * * * /home/vote1550/pi.tmktools.com/scripts/remote-keepalive.sh >> /home/vote1550/pi.tmktools.com/logs/keepalive.log 2>&1

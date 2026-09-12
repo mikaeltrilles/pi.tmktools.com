@@ -6,10 +6,15 @@
 # plus rien n'écoute sur le port 3001 et Apache renvoie « 503 Service Unavailable ».
 # Ce script vérifie toutes les 5 minutes que le site répond et relance PM2 sinon.
 #
-# Installation (une seule fois, sur le serveur) :
-#   crontab -e
-#   */5 * * * * /home/vote1550/pi.tmktools.com/scripts/remote-keepalive.sh >> /home/vote1550/pi.tmktools.com/logs/keepalive.log 2>&1
+# ATTENTION — ce script est SILENCIEUX tant que le site répond (voir le `exit 0`
+# plus bas). Un journal logs/keepalive.log vide signifie donc « aucune panne
+# depuis l'installation », et surtout pas « tâche cron inactive ». Ne jamais
+# désactiver la tâche sur ce critère : le 12 septembre 2026, elle a été commentée
+# comme « sans activité récente » et le site est tombé en 503 le jour même, sans
+# filet pour le relever. La seule preuve d'inactivité est son absence de `crontab -l`.
 #
+# Installation : le fragment scripts/cron/55-pi.cron est copié dans ~/cron/cron.d/
+# sur le serveur, puis appliqué par ~/cron/apply-crontab.sh (voir docs/crontab-serveur.txt).
 # scripts/install-remote-keepalive.sh fait cette installation depuis le poste local.
 APP_DIR="${APP_DIR:-$HOME/pi.tmktools.com}"
 PORT="${PORT:-3001}"

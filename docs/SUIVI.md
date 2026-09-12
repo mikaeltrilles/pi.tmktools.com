@@ -5,6 +5,58 @@ de travail, la plus récente en haut. Le détail technique est dans `git log` et
 
 ---
 
+## 2026-09-12 — Panne 503 : le filet de sécurité avait été retiré
+
+### Incident
+
+Le site répondait « 503 Service Unavailable » : le processus Node `pi-tmktools`
+n'était plus dans PM2 et le port 3001 était muet. Le démon PM2 tournait pourtant
+(l'application `linkfree` était en ligne depuis 33 h) : seul notre processus avait
+été tué, sans être relevé.
+
+**Cause racine** : la crontab du compte, réassemblée le jour même à 14 h 55 par
+`~/cron/apply-crontab.sh`, avait relégué le contrôle de disponibilité de π dans le
+fragment `60-autres.cron`, **commenté**, sous l'intitulé « tâches sans activité
+récente ». Le critère retenu était un journal `logs/keepalive.log` vide — or ce
+journal est vide **parce que** `remote-keepalive.sh` est silencieux tant que le
+site répond. Le seul garde-fou contre le 503 a donc été retiré quelques minutes
+avant que la panne ne survienne, et plus rien ne pouvait relever le site.
+
+### Fait
+
+- **Remise en ligne** : `npx pm2 startOrRestart ecosystem.config.js` puis
+  `npx pm2 save` sur le serveur. Site et API de nouveau en HTTP 200.
+- **Fragment cron dédié et versionné** : `scripts/cron/55-pi.cron`, avec en tête un
+  avertissement explicite « journal vide ≠ tâche inactive », pour que le contrôle ne
+  soit plus désactivé sur ce critère.
+- **`scripts/install-remote-keepalive.sh` réécrit** : il écrivait la crontab en
+  direct, ce qui, depuis le passage aux fragments (11 septembre), aurait été effacé
+  au prochain assemblage. Il dépose désormais le fragment dans `~/cron/cron.d/`,
+  retire toute ligne héritée d'un autre fragment, puis appelle `apply-crontab.sh`.
+- **`scripts/remote-keepalive.sh`** : en-tête complété sur le silence volontaire.
+- **`docs/crontab-serveur.txt` réécrit** : organisation par fragments, procédure de
+  remise en place, et les deux pièges connus (wrapper CageFS, journal vide).
+
+### Reste à faire
+
+L'application du crontab n'est pas réalisable en mode automatique (Claude ne peut
+pas modifier de crontab) : la commande exacte est dans `docs/crontab-serveur.txt`,
+à lancer dans un terminal. **Tant qu'elle n'est pas lancée, le site n'a aucun filet
+et un nouveau 503 resterait sans relance automatique.**
+
+### Vérifications
+
+- Production : `/`, `/stats`, `/api/health`, `/continuous-state`, `/snapshots`,
+  `/styles.css`, `/sw.js`, `/manifest.webmanifest` en HTTP 200.
+- `/stats` cohérent avec le calculateur : 18 770 256 décimales.
+- Calculateur local : `pi-calculate.service` actif, publication en production à jour.
+
+### Leçon
+
+Un contrôle silencieux doit **annoncer son silence** là où on risque de le juger :
+dans le fragment cron lui-même. Le même raisonnement vaut pour les tâches
+`--quiet-ok` du CRM, qui pourraient être désactivées par le même critère.
+
 ## 2026-09-06 — Interface homogène avec φ, PWA, correctifs mobile
 
 ### Fait

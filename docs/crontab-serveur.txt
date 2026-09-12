@@ -1,3 +1,50 @@
-14 1 * * * "/home/vote1550/.acme.sh"/acme.sh --cron --home "/home/vote1550/.acme.sh" > /dev/null
-0 4 3 * * /home/vote1550/ip.tmktools.com/scripts/update-geoip.sh > /dev/null 2>&1
-*/5 * * * * /home/vote1550/pi.tmktools.com/scripts/remote-keepalive.sh >> /home/vote1550/pi.tmktools.com/logs/keepalive.log 2>&1
+Crontab du serveur o2switch (vote1550) — référence pour pi.tmktools.com
+=======================================================================
+
+Depuis le 11 septembre 2026, la crontab du compte n'est plus écrite directement :
+elle est ASSEMBLÉE à partir de fragments, par le script du serveur
+~/cron/apply-crontab.sh (sauvegarde horodatée, refus d'un résultat vide ou amputé,
+journal dans ~/cron/journal.log).
+
+  ~/cron/cron.d/00-systeme.cron    certificats acme.sh, sauvegarde de la crontab
+  ~/cron/cron.d/10-hnr.cron        hnr.tmktools.com
+  ~/cron/cron.d/20-crm.cron        crm.tmktools.com
+  ~/cron/cron.d/30-biblio.cron     biblio.tmktools.com
+  ~/cron/cron.d/40-dayboard.cron   dayboard.tmktools.com
+  ~/cron/cron.d/50-linkfree.cron   linkfree.tmktools.com
+  ~/cron/cron.d/55-pi.cron         pi.tmktools.com  ← notre fragment
+  ~/cron/cron.d/60-autres.cron     tâches désactivées, conservées pour mémoire
+  ~/cron/cron.d/70-oti.cron        oti.tmktools.com
+
+Ne jamais éditer la crontab à la main : les modifications seraient écrasées au
+prochain assemblage. Modifier le fragment, puis appliquer.
+
+Fragment de pi.tmktools.com (versionné ici : scripts/cron/55-pi.cron)
+---------------------------------------------------------------------
+
+  */5 * * * * /home/vote1550/pi.tmktools.com/scripts/remote-keepalive.sh >> /home/vote1550/pi.tmktools.com/logs/keepalive.log 2>&1
+
+Installation ou remise en place (à lancer dans un terminal, Claude ne peut pas
+modifier de crontab en mode automatique) :
+
+  ssh -F /dev/null vote1550@109.234.165.174 \
+    'cp ~/pi.tmktools.com/scripts/cron/55-pi.cron ~/cron/cron.d/55-pi.cron && ~/cron/apply-crontab.sh --dry-run'
+
+  # si le diff proposé est correct, appliquer réellement :
+  ssh -F /dev/null vote1550@109.234.165.174 '~/cron/apply-crontab.sh'
+
+  # contrôle : la ligne doit apparaître décommentée
+  ssh -F /dev/null vote1550@109.234.165.174 'crontab -l | grep pi.tmktools'
+
+PIÈGES CONNUS
+-------------
+
+1. Wrapper CageFS : ne JAMAIS écrire « ( crontab -l ; echo … ) | crontab - » sur
+   ce serveur, cette forme efface la crontab existante. Passer par un fichier, ou
+   par ~/cron/apply-crontab.sh. Ne jamais lancer « crontab -r ».
+
+2. Journal vide ≠ tâche inactive. remote-keepalive.sh ne journalise QUE les
+   pannes ; logs/keepalive.log vide veut dire « aucune panne ». Le 12 septembre
+   2026, la tâche a été commentée dans 60-autres.cron au motif qu'elle était
+   « sans activité récente » : le site est tombé en 503 le jour même et n'a été
+   relevé qu'à la main. Le même raisonnement vaut pour les tâches « --quiet-ok ».
