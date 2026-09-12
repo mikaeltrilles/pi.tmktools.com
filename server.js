@@ -64,7 +64,10 @@ app.use((req, res, next) => {
 });
 
 /* ── Santé du service (supervision) ── */
-app.get('/api/health', (req, res) => {
+// La page d'état répond sur /status, comme sur phi.tmktools.com et
+// fibo.tmktools.com. /api/health est conservé : c'est l'adresse historique,
+// utilisée par les liens déjà publiés et les favoris.
+app.get(['/status', '/api/health'], (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'status.html'));
 });
 
