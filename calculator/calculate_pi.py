@@ -95,7 +95,30 @@ except ImportError:
     except ImportError:
         TZ_PARIS = datetime.timezone.utc
 
-CHUNK_SIZE = 1000
+# Taille d'un palier de sauvegarde.
+#
+# 1000 datait de l'epoque ou un palier coutait ~50 minutes de calcul : sauvegarder
+# souvent etait alors la prudence meme. Depuis le passage a GMP, l'evaluation ne
+# prend plus que ~7 secondes, contre ~75 secondes d'ecritures et d'envois par
+# palier (checkpoint de 27 Mo + pi_complet.txt) : on payait donc dix fois plus
+# cher en E/S qu'en calcul.
+#
+# Comme evaluate_pi reevalue π en entier a chaque palier, son cout ne depend pas
+# de la taille du palier : agrandir celui-ci amortit a la fois l'evaluation et
+# les E/S. En sens inverse, add_terms est une boucle Python dont le cout croit
+# plus vite que lineairement. Debits mesures sur l'etat reel (18,7 M decimales,
+# 12/09/2026, machine partagee avec le calculateur en cours) :
+#
+#     palier     add_terms   evaluate     debit
+#      1 000          0,5 s      6,9 s      43 711 /h
+#     10 000         14,8 s      7,0 s     371 770 /h
+#     50 000        102,6 s      7,9 s     969 929 /h
+#    100 000        238,3 s      6,9 s   1 124 158 /h   <- optimum
+#    250 000       1011,1 s      9,2 s     821 678 /h
+#
+# Contrepartie : un arret brutal fait perdre le palier en cours, soit ~4 minutes
+# de calcul au lieu de ~7 secondes. Le checkpoint precedent reste valide.
+CHUNK_SIZE = 100_000
 BACKUP_DIR = Path("/home/mitchlab/Documents")
 OUTPUT_FILE = Path("pi_complet.txt")
 PREVIEW_FILE = Path("pi_progress.txt")
@@ -1183,7 +1206,7 @@ def parse_args():
     parser.add_argument("--digits", type=int, default=None,
                         help="Mode fini : calcule exactement N decimales puis s'arrete.")
     parser.add_argument("--chunk", type=int, default=CHUNK_SIZE,
-                        help="Taille d'un palier de sauvegarde (defaut : 1000).")
+                        help=f"Taille d'un palier de sauvegarde (defaut : {CHUNK_SIZE:,}).")
     parser.add_argument("--reset", action="store_true",
                         help="Supprime le checkpoint existant et recommence a zero.")
     parser.add_argument("--no-resume", action="store_true",
