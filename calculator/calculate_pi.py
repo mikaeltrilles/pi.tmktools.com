@@ -91,7 +91,12 @@ REMOTE_CHECKPOINT_SCP_TARGET = f"{REMOTE_USER}@{REMOTE_HOST}:{REMOTE_CHECKPOINT_
 REMOTE_CHECKPOINT_RESTORE_PATH = f"{REMOTE_DIR}/pi_checkpoint_restore.json"
 REMOTE_HEARTBEAT_PATH = f"{REMOTE_DIR}/calculator_heartbeat.json"
 REMOTE_HEARTBEAT_SCP_TARGET = f"{REMOTE_USER}@{REMOTE_HOST}:{REMOTE_HEARTBEAT_PATH}"
-REMOTE_CHECKPOINT_HISTORY = 10
+# Nombre de copies historisees du checkpoint conservees sur le serveur.
+# 1 = on ne garde que la plus recente (les fichiers pesent ~27 Mo chacun).
+# Le checkpoint principal (pi_checkpoint.json) et le point de reprise protege
+# (pi_checkpoint_restore.json) sont des fichiers distincts, jamais touches par
+# cette rotation : il reste donc toujours trois points de reprise.
+REMOTE_CHECKPOINT_HISTORY = 1
 # Ignore une configuration SSH systeme invalide et interdit les demandes de mot de passe.
 SSH_OPTIONS = ["-F", "/dev/null", "-o", "BatchMode=yes"]
 
@@ -512,11 +517,14 @@ def upload_remote_checkpoint(src: Path) -> bool:
             timeout=60,
         )
 
-        # Rotation : garder seulement les REMOTE_CHECKPOINT_HISTORY derniers
+        # Rotation : garder seulement les REMOTE_CHECKPOINT_HISTORY derniers.
+        # Le motif 'pi_checkpoint_[0-9]*' ne vise que les copies horodatees :
+        # 'pi_checkpoint_*' aurait aussi englobe pi_checkpoint_restore.json,
+        # le point de reprise protege, qui doit survivre a toute rotation.
         if copy_result.returncode == 0 and REMOTE_CHECKPOINT_HISTORY > 0:
             rotate_result = subprocess.run(
                 ["ssh", *SSH_OPTIONS, f"{REMOTE_USER}@{REMOTE_HOST}",
-                 f"ls -t {REMOTE_DIR}/pi_checkpoint_*.json 2>/dev/null | tail -n +{REMOTE_CHECKPOINT_HISTORY + 1} | xargs -r rm -f"],
+                 f"ls -t {REMOTE_DIR}/pi_checkpoint_[0-9]*.json 2>/dev/null | tail -n +{REMOTE_CHECKPOINT_HISTORY + 1} | xargs -r rm -f"],
                 capture_output=True,
                 text=True,
                 timeout=60,
