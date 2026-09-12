@@ -44,11 +44,42 @@ pas modifier de crontab) : la commande exacte est dans `docs/crontab-serveur.txt
 à lancer dans un terminal. **Tant qu'elle n'est pas lancée, le site n'a aucun filet
 et un nouveau 503 resterait sans relance automatique.**
 
+### Fausse piste : les « 429 » de Playwright
+
+Le contrôle d'interface montrait la page « Hors ligne », sans css ni js, avec des
+« 429 Too Many Requests » sur presque toutes les ressources — y compris après
+plusieurs minutes sans aucune requête. Conclusion tentante : le site restait cassé
+pour tout le monde. C'était faux.
+
+Huit requêtes `curl` simultanées passaient toutes en 200. La différence tenait au
+**User-Agent** : celui de Playwright contient « HeadlessChrome », qu'o2switch
+identifie comme un robot. Vérification directe, trois requêtes de chaque :
+
+    UA « HeadlessChrome » → 200, 429, 429
+    UA « Chrome » normal  → 200, 200, 200
+
+Avec un agent ordinaire, tout revient en 200, le flux SSE affiche « Connecté » et
+l'état « Calcul actif ». Le site était sain depuis la relance de PM2.
+
+Deux conséquences : `scripts/verif-prod.mjs` force désormais un agent ordinaire, et
+`CLAUDE.md` le rappelle — sans cette précaution, tout contrôle d'interface conclut
+à une panne inexistante.
+
+Une modification de la politique de cache du `.htaccess` (polices et icônes servies
+en `no-store`, rechargées à chaque visite) avait été rédigée tant que les 429
+semblaient venir d'une rafale de requêtes. Elle a été **annulée** : sa justification
+ne tenait plus, et le `no-store` global est un choix délibéré. L'observation reste
+valable en soi — environ 55 Ko de polices rechargés à chaque visite — mais c'est une
+optimisation à décider, pas un correctif d'incident.
+
 ### Vérifications
 
 - Production : `/`, `/stats`, `/api/health`, `/continuous-state`, `/snapshots`,
   `/styles.css`, `/sw.js`, `/manifest.webmanifest` en HTTP 200.
 - `/stats` cohérent avec le calculateur : 18 770 256 décimales.
+- `scripts/verif-prod.mjs` : quatre configurations conformes (bureau et mobile,
+  sombre et clair, jusqu'à 320 px) — flux SSE connecté, calcul actif, aucune erreur
+  console, aucun débordement horizontal.
 - Calculateur local : `pi-calculate.service` actif, publication en production à jour.
 
 ### Leçon

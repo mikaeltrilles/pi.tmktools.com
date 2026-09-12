@@ -61,6 +61,15 @@ Pour toute modification demandée : **1) coder, 2) vérifier, 3) commit détaill
 - Interface : captures Playwright (Chromium de `../phi.tmktools.com/node_modules`,
   binaire dans `~/.cache/ms-playwright`) en bureau et mobile, thèmes sombre et clair,
   avec contrôle des erreurs console et de `scrollWidth <= clientWidth`.
+- **Contre la production, toujours forcer un `userAgent` de navigateur ordinaire.**
+  L'agent par défaut de Playwright contient « HeadlessChrome », qu'o2switch
+  identifie comme un robot : les ressources reviennent alors en « 429 Too Many
+  Requests », la page s'affiche sans css ni js et paraît « Hors ligne » alors que
+  le site est parfaitement sain. Diagnostic fait le 12 septembre 2026 ; sans cette
+  précaution, tout contrôle d'interface conclut à tort à une panne.
+- Si la version de Playwright ne correspond plus au Chromium téléchargé, pointer
+  `executablePath` sur le binaire présent dans `~/.cache/ms-playwright` plutôt que
+  de relancer `npx playwright install`.
 - Serveur : `PORT=3199 node server.js` pour un test local sans toucher au port 3001.
 - Calculateur : `python3 -m py_compile calculator/calculate_pi.py` et
   `python3 calculator/tests/test_chud_incremental.py`.
