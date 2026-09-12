@@ -136,6 +136,36 @@ Piste restante : `add_terms` est désormais le goulot (309 s sur ~392). Le binar
 splitting, algorithme habituel pour Chudnovsky, le ramènerait en O(M(n) log n),
 mais c'est une réécriture du moteur.
 
+### La page remontait toute seule pendant la génération des décimales
+
+Signalé en fin de session : pendant que les décimales se rendaient, la page
+remontait d'elle-même vers la zone π, arrachant le lecteur à la section qu'il
+était en train de lire. Mesuré au chargement : descendu à 1787 px, il se
+retrouvait ramené à 1093 px — 694 px de remontée subie.
+
+Cause : `scrollToLatest()` appelait `scrollIntoView()` sur la dernière décimale.
+Cette méthode fait défiler **tous** les ancêtres scrollables de l'élément, la
+fenêtre comprise — et pas seulement le conteneur des décimales, qui a pourtant
+son propre défilement (`.digits`, `overflow:auto`, `max-height:60vh`). Chaque
+décimale rendue repositionnait donc la page entière.
+
+Le défilement est maintenant calculé et appliqué sur le seul `#piStage`, via son
+`scrollTop` : la fenêtre n'est plus jamais touchée. Second correctif, indissociable
+du premier : le suivi automatique ne s'applique que si le lecteur suit réellement
+le direct (dernière décimale à moins de 120 px du bas) — s'il a remonté pour
+relire les décimales déjà tombées, on ne lui reprend plus la main.
+
+À noter : le symptôme s'était raréfié depuis le passage du palier à 100 000
+décimales, le fichier n'étant plus publié que toutes les ~5 minutes. Il restait
+entier au chargement de la page, où des milliers de décimales sont rendues
+d'affilée — c'est dans ce scénario qu'il a été reproduit puis corrigé.
+
+Vérifié en local (port 3199) puis en production, sur cinq points : les décimales
+continuent d'arriver, la zone π suit toujours le direct, la dernière décimale y
+reste visible, la page ne bouge plus d'un pixel, et le lecteur garde la main
+quand il remonte dans le flux. φ et Fibonacci n'utilisent pas `scrollIntoView` :
+ils ne sont pas concernés. Commit `f7c6c18`, déployé le 12 septembre à 22 h 35.
+
 ### Plafonds mémoire posés sur les trois calculateurs
 
 Suite donnée au constat ci-dessous. Relevé systemd sur sept jours, qui confirme
