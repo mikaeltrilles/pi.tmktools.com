@@ -253,6 +253,57 @@ silencieusement :
 cat /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/cgroup.controllers
 ```
 
+#### Plafond collectif : `calculateurs.slice`
+
+Les valeurs ci-dessus ne bornent que `pi-calculate`. La somme des `MemoryMax` des trois
+calculateurs atteint 12,5 Go sur 14 Go de RAM : chacun peut rester dans son
+plafond pendant que la machine, elle, est asphyxiée. `calculateurs.slice` borne
+les trois réunis — 6 Go de freinage, 7 Go de garde-fou — et laisse donc en toutes
+circonstances au moins 7 Go au système et aux sessions de travail.
+
+```bash
+cp calculator/calculateurs.slice ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user show calculateurs.slice -p MemoryHigh -p MemoryMax -p MemoryCurrent
+systemd-cgtop --user      # consommation des trois calculateurs en direct
+```
+
+Le fichier est identique dans les trois dépôts ; c'est la ligne
+`Slice=calculateurs.slice` du drop-in qui rattache le service à la tranche.
+
+#### Bride de swap
+
+Le poste dispose de 12 Go de swap : 8 Go de fichiers sur NVMe (`/swap.img` et
+`/swap2.img`) et 4 Go compressés en RAM par zram, servis en premier (priorité
+100, compression zstd — à un ratio d'environ 3:1, ces 4 Go n'occupent qu'à peu
+près 1,3 Go de RAM réelle). Deux réglages accompagnent ce montage :
+`vm.swappiness = 100`, parce qu'avec zram en tête de file comprimer coûte moins
+cher que jeter un cache qu'il faudra relire sur NVMe ; et `vm.page-cluster = 0`,
+l'anticipation de lecture par blocs de huit pages n'ayant plus rien à amortir
+faute de déplacement de tête. Le tout vit dans `/etc/systemd/zram-generator.conf`
+et `/etc/sysctl.d/99-memoire.conf`, hors dépôt.
+
+Ce confort n'est pas destiné aux calculateurs, d'où `MemorySwapMax=512M` par
+service et 1 Go pour la tranche. La mémoire de travail d'un calcul en précision
+arbitraire est relue en permanence : la faire descendre dans le swap, fût-il
+compressé, ne libère rien durablement et fait passer la machine son temps à
+paginer ou à décompresser. C'est ce blocage-là, et non le manque de RAM, que
+l'on ressent en premier. Ces 512 Mo absorbent les pics sans laisser le calcul
+s'y installer ; le swap du poste reste disponible pour les sessions de travail.
+
+#### Lancement manuel
+
+`calculator/run_background.sh` lancé hors systemd ne passait par aucun cgroup :
+il échappait entièrement aux plafonds ci-dessus. Le script enveloppe désormais le
+calcul dans un *scope* transitoire aux mêmes valeurs, rattaché à la même tranche.
+`systemd-run` remplace le processus courant (`exec`), donc le PID affiché, le
+fichier de lock et `stop.sh` restent valides.
+
+```bash
+systemctl --user status pi-calculate-manuel.scope
+```
+
+
 ## ⚙️ Moteur arithmétique (GMP)
 
 Le calculateur utilise **GMP** (via `gmpy2`) quand il est disponible, et retombe

@@ -5,6 +5,48 @@ de travail, la plus récente en haut. Le détail technique est dans `git log` et
 
 ---
 
+## 2026-09-16 — Mémoire : plafond collectif, bride de swap, lancement manuel encadré
+
+- Constat : les plafonds par service posés le 12 septembre bornent chaque calculateur pris
+  isolément, mais rien ne borne les trois ensemble. La somme de leurs `MemoryMax` vaut 12,5 Go
+  sur 14 Go de RAM : chacun peut rester dans son plafond pendant que la machine, elle, est
+  asphyxiée. Deux autres trous restaient ouverts : le swap et le lancement manuel.
+- **Plafond collectif** : nouvelle tranche `calculateurs.slice` (`MemoryHigh=6G`, `MemoryMax=7G`,
+  `MemorySwapMax=1G`), versionnée à l'identique dans les trois dépôts
+  (`calculator/calculateurs.slice`). Le drop-in de chaque service porte désormais
+  `Slice=calculateurs.slice`. Quoi qu'il arrive, au moins 7 Go restent au système et aux sessions
+  de travail.
+- **Bride de swap** : `MemorySwapMax=512M` par service, 1 Go pour la tranche. La mémoire de travail
+  d'un calcul en précision arbitraire est relue en permanence ; la faire descendre dans le swap ne
+  libère rien durablement et fait passer la machine son temps à paginer. C'est ce blocage-là, et non
+  le manque de RAM, que l'on ressent en premier. Ces 512 Mo absorbent les pics sans laisser le calcul
+  s'y installer.
+- **Swap du poste porté de 4 à 12 Go**, hors dépôt. Le relevé montrait 4 Go saturés à 3,6 Go : une
+  fois les calculateurs bridés, il ne restait plus aucune marge pour les sessions de travail. Second
+  fichier `/swap2.img` de 4 Go ajouté à côté de l'existant — sans `swapoff`, donc sans rapatrier en
+  RAM les 3,6 Go déjà swappés — plus un étage zram de 4 Go compressés en zstd, servi en priorité 100
+  avant le NVMe. Réglages associés dans `/etc/sysctl.d/99-memoire.conf` : `vm.swappiness = 100`
+  (avec zram en tête de file, comprimer coûte moins cher que jeter un cache qu'il faudra relire) et
+  `vm.page-cluster = 0` (l'anticipation par blocs de huit pages n'a plus rien à amortir sans
+  déplacement de tête). Les calculateurs n'en profitent pas, par construction : ce swap est pour les
+  sessions de travail.
+- **Lancement manuel** : `calculator/run_background.sh` hors systemd ne passait par aucun cgroup et
+  échappait donc à tous les plafonds — un seul lancement manuel pouvait saturer le poste. Le script
+  enveloppe maintenant le calcul dans un *scope* transitoire (`systemd-run --user --scope`) aux
+  mêmes valeurs et dans la même tranche. `systemd-run` remplaçant le processus courant (`exec`), le
+  PID affiché, le fichier de lock et `stop.sh` restent valides ; le mode `--foreground` utilisé par
+  systemd est inchangé (le service a déjà son propre cgroup). Si `systemd-run` ou la tranche
+  manquent, le script avertit au lieu de démarrer sans plafond en silence.
+- Vérification réelle et pas seulement déclarative : un processus de test lancé dans la tranche avec
+  `MemoryMax=100M` a bien été arrêté à 100 Mo pile, et systemd a journalisé l'arrêt au niveau de
+  `calculateurs.slice`. Les trois services montrent `Slice=calculateurs.slice`, `MemorySwapMax`
+  et leurs plafonds dans `systemctl --user show`.
+- Appliqué à chaud par `daemon-reload`. README complété (plafond collectif, swap, lancement manuel).
+- Rien de déployable n'a changé : la modification ne touche que la supervision locale et la
+  documentation.
+
+---
+
 ## 2026-09-12 — Panne 503 : le filet de sécurité avait été retiré
 
 ### Incident

@@ -1,0 +1,37 @@
+# calculateurs.slice — budget mémoire commun aux trois calculateurs
+# (pi.tmktools.com, phi.tmktools.com, fibo.tmktools.com).
+#
+# Les plafonds par service (50-memoire.conf) empêchent UN calculateur de
+# déraper. Ils ne disent rien des trois ensemble : la somme de leurs
+# MemoryMax vaut 12,5 Go sur 14 Go de RAM. Chacun peut donc rester dans son
+# plafond pendant que la machine, elle, est asphyxiée.
+#
+# Cette tranche est le plafond collectif : quoi qu'il arrive, les trois
+# calculateurs réunis ne dépassent pas MemoryMax, et le reste de la RAM
+# demeure disponible pour la session de travail.
+#
+# Installation (fichier identique dans les trois dépôts) :
+#   cp calculator/calculateurs.slice ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#
+# Vérification :
+#   systemctl --user show calculateurs.slice -p MemoryHigh -p MemoryMax -p MemoryCurrent
+#   systemd-cgtop --user
+
+[Unit]
+Description=Budget mémoire commun des calculateurs (pi, phi, fibo)
+
+[Slice]
+# Freinage collectif : au-delà, le noyau récupère agressivement la mémoire des
+# trois services, qui ralentissent mais continuent de tourner.
+MemoryHigh=6G
+# Garde-fou collectif : au-delà, le noyau arrête le plus gourmand des trois —
+# lui seul — que systemd relance depuis son dernier checkpoint.
+MemoryMax=7G
+# Le poste dispose de 12 Go de swap (8 Go sur NVMe, plus 4 Go compressés en RAM
+# par zram, servis en premier), mais ce n'est pas pour les calculateurs : leur
+# mémoire de travail est relue en permanence, l'y faire descendre ne libère rien
+# durablement et fait passer la machine son temps à paginer ou à décompresser.
+# Ce gigaoctet absorbe les pics des trois réunis ; le reste du swap demeure
+# disponible pour les sessions de travail.
+MemorySwapMax=1G

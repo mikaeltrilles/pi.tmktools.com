@@ -107,10 +107,29 @@ fi
 echo ""
 echo "[2/3] Demarrage du nouveau processus..."
 
-if [ -z "$ARGS" ]; then
-    nohup python3 calculate_pi.py > pi_calculate.log 2>&1 &
+# Plafonds memoire du lancement manuel.
+# Le service systemd est encadre par pi-calculate.service.d/50-memoire.conf ;
+# un lancement manuel, lui, n'a aucun plafond et peut a lui seul saturer la
+# machine. systemd-run applique les memes valeurs et place le calcul dans la
+# tranche commune aux trois calculateurs. Il remplace le processus courant
+# (exec) : le PID ecrit dans pi_calculate.pid reste celui de python3.
+LIMITEUR=""
+if command -v systemd-run >/dev/null 2>&1; then
+    LIMITEUR="systemd-run --user --scope --quiet --collect --unit=pi-calculate-manuel"
+    LIMITEUR="$LIMITEUR --slice=calculateurs.slice"
+    LIMITEUR="$LIMITEUR -p MemoryHigh=3G -p MemoryMax=4500M -p MemorySwapMax=512M"
+    if [ "$(systemctl --user show calculateurs.slice -p LoadState --value 2>/dev/null)" != "loaded" ]; then
+        echo "      ATTENTION : calculateurs.slice absente, plafond collectif inactif."
+        echo "      Installation : cp calculator/calculateurs.slice ~/.config/systemd/user/ && systemctl --user daemon-reload"
+    fi
 else
-    nohup python3 calculate_pi.py $ARGS > pi_calculate.log 2>&1 &
+    echo "      ATTENTION : systemd-run introuvable, le calcul tourne sans plafond memoire."
+fi
+
+if [ -z "$ARGS" ]; then
+    nohup $LIMITEUR python3 calculate_pi.py > pi_calculate.log 2>&1 &
+else
+    nohup $LIMITEUR python3 calculate_pi.py $ARGS > pi_calculate.log 2>&1 &
 fi
 
 NEW_PID=$!
